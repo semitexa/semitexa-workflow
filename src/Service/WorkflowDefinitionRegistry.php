@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Service;
 
+use Semitexa\Core\Attributes\AsService;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Workflow\Attribute\AsWorkflowDefinition;
 use Semitexa\Workflow\Contract\WorkflowDefinitionInterface;
@@ -17,6 +18,7 @@ use Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException;
  *
  * Results are cached after first initialization.
  */
+#[AsService]
 final class WorkflowDefinitionRegistry
 {
     /** @var array<string, WorkflowDefinitionInterface> keyed by workflow key */

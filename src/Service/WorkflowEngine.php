@@ -39,6 +39,15 @@ use Semitexa\Scheduler\Contract\SchedulerInterface;
 final class WorkflowEngine implements WorkflowEngineInterface
 {
     #[InjectAsReadonly]
+    protected ?WorkflowDefinitionRegistry $registry = null;
+
+    #[InjectAsReadonly]
+    protected ?WorkflowInstanceRepositoryInterface $instanceRepo = null;
+
+    #[InjectAsReadonly]
+    protected ?WorkflowTransitionHistoryRepositoryInterface $historyRepo = null;
+
+    #[InjectAsReadonly]
     protected ?ContainerInterface $container = null;
 
     #[InjectAsReadonly]
@@ -50,14 +59,12 @@ final class WorkflowEngine implements WorkflowEngineInterface
     #[InjectAsReadonly]
     protected ?SchedulerInterface $scheduler = null;
 
-    public function __construct(
-        private readonly WorkflowDefinitionRegistry $registry,
-        private readonly WorkflowInstanceRepositoryInterface $instanceRepo,
-        private readonly WorkflowTransitionHistoryRepositoryInterface $historyRepo,
-    ) {}
-
     public function start(StartWorkflowCommand $command): WorkflowInstance
     {
+        if ($this->registry === null || $this->instanceRepo === null || $this->historyRepo === null) {
+            throw new \RuntimeException('WorkflowEngine dependencies are not available.');
+        }
+
         $definition = $this->registry->get($command->workflowKey);
 
         $existing = $this->instanceRepo->findBySubject(
@@ -102,6 +109,10 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     public function apply(ApplyTransitionCommand $command): WorkflowTransitionResult
     {
+        if ($this->registry === null || $this->instanceRepo === null || $this->historyRepo === null) {
+            throw new \RuntimeException('WorkflowEngine dependencies are not available.');
+        }
+
         $definition = $this->registry->get($command->workflowKey);
 
         $instance = $this->instanceRepo->findById($command->instanceId);
