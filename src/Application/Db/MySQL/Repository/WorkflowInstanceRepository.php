@@ -27,8 +27,15 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
         return WorkflowInstanceResource::class;
     }
 
-    public function findById(string $id): ?WorkflowInstance
+    public function findById(int|string $id): ?WorkflowInstance
     {
+        if (!is_string($id)) {
+            throw new \InvalidArgumentException(sprintf(
+                'WorkflowInstanceRepository::findById expects a string UUID, %s given.',
+                gettype($id),
+            ));
+        }
+
         $binId = Uuid7::toBytes($id);
         $result = $this->db->execute(
             'SELECT * FROM workflow_instances WHERE id = :id LIMIT 1',
@@ -71,6 +78,14 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
 
     public function save(object $instance): void
     {
+        if (!$instance instanceof WorkflowInstance) {
+            throw new \InvalidArgumentException(sprintf(
+                'Expected %s, got %s.',
+                WorkflowInstance::class,
+                $instance::class,
+            ));
+        }
+
         $resource = WorkflowInstanceResource::fromDomain($instance);
         parent::save($resource);
         $instance->id = $resource->id;
