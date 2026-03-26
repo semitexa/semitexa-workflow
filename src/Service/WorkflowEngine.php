@@ -61,9 +61,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     public function start(StartWorkflowCommand $command): WorkflowInstance
     {
-        if ($this->registry === null || $this->instanceRepo === null || $this->historyRepo === null) {
-            throw new \RuntimeException('WorkflowEngine dependencies are not available.');
-        }
+        $this->assertDependenciesAvailable();
 
         $definition = $this->registry->get($command->workflowKey);
 
@@ -109,9 +107,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     public function apply(ApplyTransitionCommand $command): WorkflowTransitionResult
     {
-        if ($this->registry === null || $this->instanceRepo === null || $this->historyRepo === null) {
-            throw new \RuntimeException('WorkflowEngine dependencies are not available.');
-        }
+        $this->assertDependenciesAvailable();
 
         $definition = $this->registry->get($command->workflowKey);
 
@@ -233,11 +229,15 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     public function get(string $instanceId): ?WorkflowInstance
     {
+        $this->assertDependenciesAvailable();
+
         return $this->instanceRepo->findById($instanceId);
     }
 
     public function findBySubject(string $workflowKey, WorkflowSubjectReferenceInterface $subject): ?WorkflowInstance
     {
+        $this->assertDependenciesAvailable();
+
         return $this->instanceRepo->findBySubject(
             $workflowKey,
             $subject->workflowSubjectType(),
@@ -248,6 +248,13 @@ final class WorkflowEngine implements WorkflowEngineInterface
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private function assertDependenciesAvailable(): void
+    {
+        if ($this->registry === null || $this->instanceRepo === null || $this->historyRepo === null) {
+            throw new \RuntimeException('WorkflowEngine dependencies are not available.');
+        }
+    }
 
     private function evaluateGuards(
         TransitionDefinition $transition,
