@@ -27,7 +27,7 @@ class WorkflowTransitionHistoryRepository extends AbstractRepository implements 
         return WorkflowTransitionHistoryResource::class;
     }
 
-    public function save(WorkflowTransitionHistory $history): void
+    public function save(object $history): void
     {
         $resource = WorkflowTransitionHistoryResource::fromDomain($history);
         parent::save($resource);

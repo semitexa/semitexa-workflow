@@ -69,7 +69,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
         return array_map(fn(array $row) => $this->hydrateInstance($row), $result->rows);
     }
 
-    public function save(WorkflowInstance $instance): void
+    public function save(object $instance): void
     {
         $resource = WorkflowInstanceResource::fromDomain($instance);
         parent::save($resource);
