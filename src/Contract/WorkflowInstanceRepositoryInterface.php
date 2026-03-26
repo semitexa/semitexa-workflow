@@ -18,6 +18,9 @@ interface WorkflowInstanceRepositoryInterface
      */
     public function findOverdueWaiting(\DateTimeImmutable $now, int $limit = 50): array;
 
+    /**
+     * @param WorkflowInstance $entity
+     */
     public function save(object $entity): void;
 
     /**

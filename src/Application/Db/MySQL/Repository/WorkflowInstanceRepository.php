@@ -27,7 +27,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
         return WorkflowInstanceResource::class;
     }
 
-    public function findById(int|string $id): ?WorkflowInstance
+    public function findById(string $id): ?WorkflowInstance
     {
         $binId = Uuid7::toBytes($id);
         $result = $this->db->execute(

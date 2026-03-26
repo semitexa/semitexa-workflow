@@ -8,6 +8,9 @@ use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 
 interface WorkflowTransitionHistoryRepositoryInterface
 {
+    /**
+     * @param WorkflowTransitionHistory $entity
+     */
     public function save(object $entity): void;
 
     /**
