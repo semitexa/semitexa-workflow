@@ -27,7 +27,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
         return WorkflowInstanceResource::class;
     }
 
-    public function findById(string $id): ?WorkflowInstance
+    public function findById(int|string $id): ?WorkflowInstance
     {
         $binId = Uuid7::toBytes($id);
         $result = $this->db->execute(
@@ -69,7 +69,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
         return array_map(fn(array $row) => $this->hydrateInstance($row), $result->rows);
     }
 
-    public function save(WorkflowInstance $instance): void
+    public function save(object $instance): void
     {
         $resource = WorkflowInstanceResource::fromDomain($instance);
         parent::save($resource);
