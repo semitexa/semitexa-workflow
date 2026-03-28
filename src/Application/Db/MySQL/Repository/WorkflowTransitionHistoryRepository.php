@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Semitexa\Workflow\Application\Db\MySQL\Repository;
 
 use Semitexa\Core\Attributes\SatisfiesRepositoryContract;
-use Semitexa\Orm\Adapter\DatabaseAdapterInterface;
 use Semitexa\Orm\Repository\AbstractRepository;
 use Semitexa\Orm\Uuid\Uuid7;
 use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowTransitionHistoryResource;
@@ -15,13 +14,6 @@ use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 #[SatisfiesRepositoryContract(of: WorkflowTransitionHistoryRepositoryInterface::class)]
 class WorkflowTransitionHistoryRepository extends AbstractRepository implements WorkflowTransitionHistoryRepositoryInterface
 {
-    public function __construct(
-        private readonly DatabaseAdapterInterface $db,
-        ?\Semitexa\Orm\Hydration\StreamingHydrator $hydrator = null,
-    ) {
-        parent::__construct($db, $hydrator);
-    }
-
     protected function getResourceClass(): string
     {
         return WorkflowTransitionHistoryResource::class;
@@ -37,7 +29,7 @@ class WorkflowTransitionHistoryRepository extends AbstractRepository implements 
     public function findByInstanceId(string $instanceId, int $limit = 100): array
     {
         $binId = Uuid7::toBytes($instanceId);
-        $result = $this->db->execute(
+        $result = $this->getAdapter()->execute(
             'SELECT * FROM workflow_transition_history WHERE workflow_instance_id = :id ORDER BY created_at ASC LIMIT :limit',
             ['id' => $binId, 'limit' => $limit],
         );
@@ -47,7 +39,7 @@ class WorkflowTransitionHistoryRepository extends AbstractRepository implements 
     public function countAttempts(string $instanceId, string $transitionKey): int
     {
         $binId = Uuid7::toBytes($instanceId);
-        $result = $this->db->execute(
+        $result = $this->getAdapter()->execute(
             'SELECT COUNT(*) as cnt FROM workflow_transition_history WHERE workflow_instance_id = :id AND transition_key = :tk',
             ['id' => $binId, 'tk' => $transitionKey],
         );

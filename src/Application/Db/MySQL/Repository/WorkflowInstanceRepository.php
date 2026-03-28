@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Semitexa\Workflow\Application\Db\MySQL\Repository;
 
 use Semitexa\Core\Attributes\SatisfiesRepositoryContract;
-use Semitexa\Orm\Adapter\DatabaseAdapterInterface;
 use Semitexa\Orm\Repository\AbstractRepository;
 use Semitexa\Orm\Uuid\Uuid7;
 use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowInstanceResource;
@@ -15,13 +14,6 @@ use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 #[SatisfiesRepositoryContract(of: WorkflowInstanceRepositoryInterface::class)]
 class WorkflowInstanceRepository extends AbstractRepository implements WorkflowInstanceRepositoryInterface
 {
-    public function __construct(
-        private readonly DatabaseAdapterInterface $db,
-        ?\Semitexa\Orm\Hydration\StreamingHydrator $hydrator = null,
-    ) {
-        parent::__construct($db, $hydrator);
-    }
-
     protected function getResourceClass(): string
     {
         return WorkflowInstanceResource::class;
@@ -37,7 +29,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
         }
 
         $binId = Uuid7::toBytes($id);
-        $result = $this->db->execute(
+        $result = $this->getAdapter()->execute(
             'SELECT * FROM workflow_instances WHERE id = :id LIMIT 1',
             ['id' => $binId],
         );
@@ -50,7 +42,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
 
     public function findBySubject(string $workflowKey, string $subjectType, string $subjectId): ?WorkflowInstance
     {
-        $result = $this->db->execute(
+        $result = $this->getAdapter()->execute(
             'SELECT * FROM workflow_instances WHERE workflow_key = :wk AND subject_type = :st AND subject_id = :si LIMIT 1',
             ['wk' => $workflowKey, 'st' => $subjectType, 'si' => $subjectId],
         );
@@ -64,7 +56,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
     public function findOverdueWaiting(\DateTimeImmutable $now, int $limit = 50): array
     {
         $nowStr = $now->format('Y-m-d H:i:s.u');
-        $result = $this->db->execute(
+        $result = $this->getAdapter()->execute(
             "SELECT * FROM workflow_instances
              WHERE status IN ('waiting', 'active')
                AND waiting_until IS NOT NULL
@@ -97,7 +89,7 @@ class WorkflowInstanceRepository extends AbstractRepository implements WorkflowI
         $nowStr = $now->format('Y-m-d H:i:s.u');
         $binId = Uuid7::toBytes($instance->id);
 
-        $result = $this->db->execute(
+        $result = $this->getAdapter()->execute(
             "UPDATE workflow_instances
              SET current_state = :current_state,
                  status = :status,
