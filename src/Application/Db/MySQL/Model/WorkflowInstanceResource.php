@@ -8,18 +8,15 @@ use Semitexa\Orm\Adapter\MySqlType;
 use Semitexa\Orm\Attribute\Column;
 use Semitexa\Orm\Attribute\FromTable;
 use Semitexa\Orm\Attribute\Index;
-use Semitexa\Orm\Contract\DomainMappable;
 use Semitexa\Orm\Trait\HasTimestamps;
 use Semitexa\Orm\Trait\HasUuidV7;
-use Semitexa\Orm\Uuid\Uuid7;
-use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 
-#[FromTable(name: 'workflow_instances', mapTo: WorkflowInstance::class)]
+#[FromTable(name: 'workflow_instances')]
 #[Index(columns: ['workflow_key', 'subject_type', 'subject_id'], unique: true, name: 'uniq_workflow_instance_subject')]
 #[Index(columns: ['tenant_id', 'status', 'waiting_until'], name: 'idx_workflow_instances_tenant_status_waiting')]
 #[Index(columns: ['workflow_key', 'current_state'], name: 'idx_workflow_instances_key_state')]
 #[Index(columns: ['awaiting_manual_action', 'updated_at'], name: 'idx_workflow_instances_manual_action')]
-class WorkflowInstanceResource implements DomainMappable
+class WorkflowInstanceResource
 {
     use HasUuidV7;
     use HasTimestamps;
@@ -68,53 +65,4 @@ class WorkflowInstanceResource implements DomainMappable
 
     #[Column(type: MySqlType::Datetime, nullable: true)]
     public ?\DateTimeImmutable $completed_at = null;
-
-    public function toDomain(): WorkflowInstance
-    {
-        $instance = new WorkflowInstance();
-        $instance->id = $this->id;
-        $instance->workflowKey = $this->workflow_key;
-        $instance->subjectType = $this->subject_type;
-        $instance->subjectId = $this->subject_id;
-        $instance->tenantId = $this->tenant_id;
-        $instance->currentState = $this->current_state;
-        $instance->status = $this->status;
-        $instance->version = $this->version;
-        $instance->activeTransitionKey = $this->active_transition_key;
-        $instance->lastErrorCode = $this->last_error_code;
-        $instance->lastErrorMessage = $this->last_error_message;
-        $instance->waitingUntil = $this->waiting_until;
-        $instance->awaitingManualAction = (bool) $this->awaiting_manual_action;
-        $instance->payloadJson = $this->payload_json;
-        $instance->contextJson = $this->context_json;
-        $instance->createdAt = $this->created_at;
-        $instance->updatedAt = $this->updated_at;
-        $instance->completedAt = $this->completed_at;
-        return $instance;
-    }
-
-    public static function fromDomain(object $entity): static
-    {
-        assert($entity instanceof WorkflowInstance);
-        $r = new static();
-        $r->id = $entity->id;
-        $r->workflow_key = $entity->workflowKey;
-        $r->subject_type = $entity->subjectType;
-        $r->subject_id = $entity->subjectId;
-        $r->tenant_id = $entity->tenantId;
-        $r->current_state = $entity->currentState;
-        $r->status = $entity->status;
-        $r->version = $entity->version;
-        $r->active_transition_key = $entity->activeTransitionKey;
-        $r->last_error_code = $entity->lastErrorCode;
-        $r->last_error_message = $entity->lastErrorMessage;
-        $r->waiting_until = $entity->waitingUntil;
-        $r->awaiting_manual_action = $entity->awaitingManualAction ? 1 : 0;
-        $r->payload_json = $entity->payloadJson;
-        $r->context_json = $entity->contextJson;
-        $r->created_at = $entity->createdAt;
-        $r->updated_at = $entity->updatedAt;
-        $r->completed_at = $entity->completedAt;
-        return $r;
-    }
 }
