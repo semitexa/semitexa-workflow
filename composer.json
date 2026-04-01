@@ -27,7 +27,7 @@
             "description": "Stateful business process orchestration: code-defined state machines, transition guards, side-effects, persistence, scheduler integration, manual approval support"
         }
     },
-    "version": "0.0.1",
+    "version": "v0.0.3",
     "keywords": [
         "semitexa",
         "workflow",
