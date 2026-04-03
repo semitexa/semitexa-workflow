@@ -1,4 +1,4 @@
-# semitexa/workflow
+# Semitexa Workflow
 
 Stateful business process orchestration with code-defined state machines, transition guards, and scheduler integration.
 
