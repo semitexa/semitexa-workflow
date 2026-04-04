@@ -23,11 +23,16 @@ use Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException;
 final class WorkflowDefinitionRegistry
 {
     #[InjectAsReadonly]
-    protected ClassDiscovery $classDiscovery;
+    protected ?ClassDiscovery $classDiscovery = null;
 
     /** @var array<string, WorkflowDefinitionInterface> keyed by workflow key */
     private array $definitions = [];
     private bool $initialized = false;
+
+    public function __construct(?ClassDiscovery $classDiscovery = null)
+    {
+        $this->classDiscovery = $classDiscovery;
+    }
 
     public function get(string $key): WorkflowDefinitionInterface
     {
@@ -59,7 +64,7 @@ final class WorkflowDefinitionRegistry
             return;
         }
 
-        $classes = $this->classDiscovery->findClassesWithAttribute(AsWorkflowDefinition::class);
+        $classes = $this->classDiscovery()->findClassesWithAttribute(AsWorkflowDefinition::class);
 
         foreach ($classes as $className) {
             if (!is_subclass_of($className, WorkflowDefinitionInterface::class)) {
@@ -73,5 +78,10 @@ final class WorkflowDefinitionRegistry
         }
 
         $this->initialized = true;
+    }
+
+    private function classDiscovery(): ClassDiscovery
+    {
+        return $this->classDiscovery ??= new ClassDiscovery();
     }
 }
