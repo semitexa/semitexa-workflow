@@ -29,11 +29,6 @@ final class WorkflowDefinitionRegistry
     private array $definitions = [];
     private bool $initialized = false;
 
-    public function __construct(?ClassDiscovery $classDiscovery = null)
-    {
-        $this->classDiscovery = $classDiscovery;
-    }
-
     public function get(string $key): WorkflowDefinitionInterface
     {
         $this->initialize();
