@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Service;
 
-use Semitexa\Core\Attributes\AsService;
+use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Workflow\Attribute\AsWorkflowDefinition;
 use Semitexa\Workflow\Contract\WorkflowDefinitionInterface;
@@ -21,6 +22,9 @@ use Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException;
 #[AsService]
 final class WorkflowDefinitionRegistry
 {
+    #[InjectAsReadonly]
+    protected ClassDiscovery $classDiscovery;
+
     /** @var array<string, WorkflowDefinitionInterface> keyed by workflow key */
     private array $definitions = [];
     private bool $initialized = false;
@@ -55,7 +59,7 @@ final class WorkflowDefinitionRegistry
             return;
         }
 
-        $classes = ClassDiscovery::findClassesWithAttribute(AsWorkflowDefinition::class);
+        $classes = $this->classDiscovery->findClassesWithAttribute(AsWorkflowDefinition::class);
 
         foreach ($classes as $className) {
             if (!is_subclass_of($className, WorkflowDefinitionInterface::class)) {
