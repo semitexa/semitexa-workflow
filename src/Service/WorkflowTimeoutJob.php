@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Service;
 
-use Semitexa\Core\Attributes\InjectAsReadonly;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Scheduler\Contract\ScheduledJobInterface;
 use Semitexa\Scheduler\Domain\Value\ScheduledJobContext;
 use Semitexa\Workflow\Contract\WorkflowEngineInterface;
