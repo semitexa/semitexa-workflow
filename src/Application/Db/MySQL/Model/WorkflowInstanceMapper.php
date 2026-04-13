@@ -8,7 +8,7 @@ use Semitexa\Orm\Attribute\AsMapper;
 use Semitexa\Orm\Contract\TableModelMapper;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 
-#[AsMapper(tableModel: WorkflowInstanceTableModel::class, domainModel: WorkflowInstance::class)]
+#[AsMapper(resourceModel: WorkflowInstanceTableModel::class, domainModel: WorkflowInstance::class)]
 final class WorkflowInstanceMapper implements TableModelMapper
 {
     public function toDomain(object $tableModel): object
