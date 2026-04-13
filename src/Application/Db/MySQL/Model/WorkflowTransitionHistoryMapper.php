@@ -8,7 +8,7 @@ use Semitexa\Orm\Attribute\AsMapper;
 use Semitexa\Orm\Contract\TableModelMapper;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 
-#[AsMapper(tableModel: WorkflowTransitionHistoryTableModel::class, domainModel: WorkflowTransitionHistory::class)]
+#[AsMapper(resourceModel: WorkflowTransitionHistoryTableModel::class, domainModel: WorkflowTransitionHistory::class)]
 final class WorkflowTransitionHistoryMapper implements TableModelMapper
 {
     public function toDomain(object $tableModel): object
