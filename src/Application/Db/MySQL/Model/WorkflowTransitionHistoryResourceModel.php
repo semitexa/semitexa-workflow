@@ -12,7 +12,7 @@ use Semitexa\Orm\Metadata\HasColumnReferences;
 use Semitexa\Orm\Metadata\HasRelationReferences;
 
 #[FromTable(name: 'workflow_transition_history')]
-final readonly class WorkflowTransitionHistoryTableModel
+final readonly class WorkflowTransitionHistoryResourceModel
 {
     use HasColumnReferences;
     use HasRelationReferences;
