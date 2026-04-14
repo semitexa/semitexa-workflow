@@ -7,11 +7,10 @@ namespace Semitexa\Workflow\Application\Db\MySQL\Repository;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesRepositoryContract;
 use Semitexa\Orm\OrmManager;
-use Semitexa\Orm\Query\Direction;
 use Semitexa\Orm\Query\Operator;
 use Semitexa\Orm\Repository\DomainRepository;
 use Semitexa\Orm\Uuid\Uuid7;
-use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowInstanceTableModel;
+use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowInstanceResourceModel;
 use Semitexa\Workflow\Contract\WorkflowInstanceRepositoryInterface;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 
@@ -33,9 +32,9 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
     {
         /** @var WorkflowInstance|null */
         return $this->repository()->query()
-            ->where(WorkflowInstanceTableModel::column('workflowKey'), Operator::Equals, $workflowKey)
-            ->where(WorkflowInstanceTableModel::column('subjectType'), Operator::Equals, $subjectType)
-            ->where(WorkflowInstanceTableModel::column('subjectId'), Operator::Equals, $subjectId)
+            ->where(WorkflowInstanceResourceModel::column('workflowKey'), Operator::Equals, $workflowKey)
+            ->where(WorkflowInstanceResourceModel::column('subjectType'), Operator::Equals, $subjectType)
+            ->where(WorkflowInstanceResourceModel::column('subjectId'), Operator::Equals, $subjectId)
             ->fetchOneAs(WorkflowInstance::class, $this->orm()->getMapperRegistry());
     }
 
@@ -53,7 +52,7 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
 
         return array_map(
             fn (array $row): WorkflowInstance => $this->orm()->getMapperRegistry()->mapToDomain(
-                $this->orm()->getTableModelHydrator()->hydrate($row, WorkflowInstanceTableModel::class),
+                $this->orm()->getResourceModelHydrator()->hydrate($row, WorkflowInstanceResourceModel::class),
                 WorkflowInstance::class,
             ),
             $result->rows,
@@ -120,7 +119,7 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
     private function repository(): DomainRepository
     {
         return $this->repository ??= $this->orm()->repository(
-            WorkflowInstanceTableModel::class,
+            WorkflowInstanceResourceModel::class,
             WorkflowInstance::class,
         );
     }

@@ -10,7 +10,7 @@ use Semitexa\Orm\OrmManager;
 use Semitexa\Orm\Query\Direction;
 use Semitexa\Orm\Query\Operator;
 use Semitexa\Orm\Repository\DomainRepository;
-use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowTransitionHistoryTableModel;
+use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowTransitionHistoryResourceModel;
 use Semitexa\Workflow\Contract\WorkflowTransitionHistoryRepositoryInterface;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 
@@ -43,8 +43,8 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
     {
         /** @var list<WorkflowTransitionHistory> */
         return $this->repository()->query()
-            ->where(WorkflowTransitionHistoryTableModel::column('workflowInstanceId'), Operator::Equals, $instanceId)
-            ->orderBy(WorkflowTransitionHistoryTableModel::column('createdAt'), Direction::Asc)
+            ->where(WorkflowTransitionHistoryResourceModel::column('workflowInstanceId'), Operator::Equals, $instanceId)
+            ->orderBy(WorkflowTransitionHistoryResourceModel::column('createdAt'), Direction::Asc)
             ->limit($limit)
             ->fetchAllAs(WorkflowTransitionHistory::class, $this->orm()->getMapperRegistry());
     }
@@ -62,7 +62,7 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
     private function repository(): DomainRepository
     {
         return $this->repository ??= $this->orm()->repository(
-            WorkflowTransitionHistoryTableModel::class,
+            WorkflowTransitionHistoryResourceModel::class,
             WorkflowTransitionHistory::class,
         );
     }

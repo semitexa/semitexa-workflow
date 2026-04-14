@@ -5,44 +5,44 @@ declare(strict_types=1);
 namespace Semitexa\Workflow\Application\Db\MySQL\Model;
 
 use Semitexa\Orm\Attribute\AsMapper;
-use Semitexa\Orm\Contract\TableModelMapper;
+use Semitexa\Orm\Contract\ResourceModelMapperInterface;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 
-#[AsMapper(resourceModel: WorkflowInstanceTableModel::class, domainModel: WorkflowInstance::class)]
-final class WorkflowInstanceMapper implements TableModelMapper
+#[AsMapper(resourceModel: WorkflowInstanceResourceModel::class, domainModel: WorkflowInstance::class)]
+final class WorkflowInstanceMapper implements ResourceModelMapperInterface
 {
-    public function toDomain(object $tableModel): object
+    public function toDomain(object $resourceModel): object
     {
-        $tableModel instanceof WorkflowInstanceTableModel || throw new \InvalidArgumentException('Unexpected table model.');
+        $resourceModel instanceof WorkflowInstanceResourceModel || throw new \InvalidArgumentException('Unexpected resource model.');
 
         $instance = new WorkflowInstance();
-        $instance->id = $tableModel->id;
-        $instance->workflowKey = $tableModel->workflowKey;
-        $instance->subjectType = $tableModel->subjectType;
-        $instance->subjectId = $tableModel->subjectId;
-        $instance->tenantId = $tableModel->tenantId;
-        $instance->currentState = $tableModel->currentState;
-        $instance->status = $tableModel->status;
-        $instance->version = $tableModel->version;
-        $instance->activeTransitionKey = $tableModel->activeTransitionKey;
-        $instance->lastErrorCode = $tableModel->lastErrorCode;
-        $instance->lastErrorMessage = $tableModel->lastErrorMessage;
-        $instance->waitingUntil = $tableModel->waitingUntil;
-        $instance->awaitingManualAction = $tableModel->awaitingManualAction;
-        $instance->payloadJson = $tableModel->payloadJson;
-        $instance->contextJson = $tableModel->contextJson;
-        $instance->createdAt = $tableModel->createdAt;
-        $instance->updatedAt = $tableModel->updatedAt;
-        $instance->completedAt = $tableModel->completedAt;
+        $instance->id = $resourceModel->id;
+        $instance->workflowKey = $resourceModel->workflowKey;
+        $instance->subjectType = $resourceModel->subjectType;
+        $instance->subjectId = $resourceModel->subjectId;
+        $instance->tenantId = $resourceModel->tenantId;
+        $instance->currentState = $resourceModel->currentState;
+        $instance->status = $resourceModel->status;
+        $instance->version = $resourceModel->version;
+        $instance->activeTransitionKey = $resourceModel->activeTransitionKey;
+        $instance->lastErrorCode = $resourceModel->lastErrorCode;
+        $instance->lastErrorMessage = $resourceModel->lastErrorMessage;
+        $instance->waitingUntil = $resourceModel->waitingUntil;
+        $instance->awaitingManualAction = $resourceModel->awaitingManualAction;
+        $instance->payloadJson = $resourceModel->payloadJson;
+        $instance->contextJson = $resourceModel->contextJson;
+        $instance->createdAt = $resourceModel->createdAt;
+        $instance->updatedAt = $resourceModel->updatedAt;
+        $instance->completedAt = $resourceModel->completedAt;
 
         return $instance;
     }
 
-    public function toTableModel(object $domainModel): object
+    public function toSourceModel(object $domainModel): object
     {
         $domainModel instanceof WorkflowInstance || throw new \InvalidArgumentException('Unexpected domain model.');
 
-        return new WorkflowInstanceTableModel(
+        return new WorkflowInstanceResourceModel(
             id: $domainModel->id,
             workflowKey: $domainModel->workflowKey,
             subjectType: $domainModel->subjectType,

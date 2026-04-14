@@ -5,40 +5,40 @@ declare(strict_types=1);
 namespace Semitexa\Workflow\Application\Db\MySQL\Model;
 
 use Semitexa\Orm\Attribute\AsMapper;
-use Semitexa\Orm\Contract\TableModelMapper;
+use Semitexa\Orm\Contract\ResourceModelMapperInterface;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 
-#[AsMapper(resourceModel: WorkflowTransitionHistoryTableModel::class, domainModel: WorkflowTransitionHistory::class)]
-final class WorkflowTransitionHistoryMapper implements TableModelMapper
+#[AsMapper(resourceModel: WorkflowTransitionHistoryResourceModel::class, domainModel: WorkflowTransitionHistory::class)]
+final class WorkflowTransitionHistoryMapper implements ResourceModelMapperInterface
 {
-    public function toDomain(object $tableModel): object
+    public function toDomain(object $resourceModel): object
     {
-        $tableModel instanceof WorkflowTransitionHistoryTableModel || throw new \InvalidArgumentException('Unexpected table model.');
+        $resourceModel instanceof WorkflowTransitionHistoryResourceModel || throw new \InvalidArgumentException('Unexpected resource model.');
 
         $history = new WorkflowTransitionHistory();
-        $history->id = $tableModel->id;
-        $history->workflowInstanceId = $tableModel->workflowInstanceId;
-        $history->transitionKey = $tableModel->transitionKey;
-        $history->fromState = $tableModel->fromState;
-        $history->toState = $tableModel->toState;
-        $history->triggerType = $tableModel->triggerType;
-        $history->triggeredByType = $tableModel->triggeredByType;
-        $history->triggeredById = $tableModel->triggeredById;
-        $history->attempt = $tableModel->attempt;
-        $history->result = $tableModel->result;
-        $history->guardFailuresJson = $tableModel->guardFailuresJson;
-        $history->sideEffectFailuresJson = $tableModel->sideEffectFailuresJson;
-        $history->metadataJson = $tableModel->metadataJson;
-        $history->createdAt = $tableModel->createdAt;
+        $history->id = $resourceModel->id;
+        $history->workflowInstanceId = $resourceModel->workflowInstanceId;
+        $history->transitionKey = $resourceModel->transitionKey;
+        $history->fromState = $resourceModel->fromState;
+        $history->toState = $resourceModel->toState;
+        $history->triggerType = $resourceModel->triggerType;
+        $history->triggeredByType = $resourceModel->triggeredByType;
+        $history->triggeredById = $resourceModel->triggeredById;
+        $history->attempt = $resourceModel->attempt;
+        $history->result = $resourceModel->result;
+        $history->guardFailuresJson = $resourceModel->guardFailuresJson;
+        $history->sideEffectFailuresJson = $resourceModel->sideEffectFailuresJson;
+        $history->metadataJson = $resourceModel->metadataJson;
+        $history->createdAt = $resourceModel->createdAt;
 
         return $history;
     }
 
-    public function toTableModel(object $domainModel): object
+    public function toSourceModel(object $domainModel): object
     {
         $domainModel instanceof WorkflowTransitionHistory || throw new \InvalidArgumentException('Unexpected domain model.');
 
-        return new WorkflowTransitionHistoryTableModel(
+        return new WorkflowTransitionHistoryResourceModel(
             id: $domainModel->id,
             workflowInstanceId: $domainModel->workflowInstanceId,
             transitionKey: $domainModel->transitionKey,
