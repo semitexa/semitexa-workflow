@@ -18,7 +18,7 @@ use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHistoryRepositoryInterface
 {
     #[InjectAsReadonly]
-    protected ?OrmManager $orm = null;
+    protected OrmManager $orm;
 
     private ?DomainRepository $repository = null;
 

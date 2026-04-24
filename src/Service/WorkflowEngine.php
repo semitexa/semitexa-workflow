@@ -39,25 +39,25 @@ use Semitexa\Scheduler\Contract\SchedulerInterface;
 final class WorkflowEngine implements WorkflowEngineInterface
 {
     #[InjectAsReadonly]
-    protected ?WorkflowDefinitionRegistry $registry = null;
+    protected WorkflowDefinitionRegistry $registry;
 
     #[InjectAsReadonly]
-    protected ?WorkflowInstanceRepositoryInterface $instanceRepo = null;
+    protected WorkflowInstanceRepositoryInterface $instanceRepo;
 
     #[InjectAsReadonly]
-    protected ?WorkflowTransitionHistoryRepositoryInterface $historyRepo = null;
+    protected WorkflowTransitionHistoryRepositoryInterface $historyRepo;
 
     #[InjectAsReadonly]
-    protected ?ContainerInterface $container = null;
+    protected ContainerInterface $container;
 
     #[InjectAsReadonly]
-    protected ?EventDispatcherInterface $eventDispatcher = null;
+    protected EventDispatcherInterface $eventDispatcher;
 
     #[InjectAsReadonly]
-    protected ?TransactionManager $transactionManager = null;
+    protected TransactionManager $transactionManager;
 
     #[InjectAsReadonly]
-    protected ?SchedulerInterface $scheduler = null;
+    protected SchedulerInterface $scheduler;
 
     public function start(StartWorkflowCommand $command): WorkflowInstance
     {
@@ -198,7 +198,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $sideEffectFailures = $this->runSideEffects($transition, $instance, $command);
 
         // Schedule timeout job if transition has a timeout policy
-        if ($transition->timeout !== null && $this->scheduler !== null) {
+        if ($transition->timeout !== null && isset($this->scheduler)) {
             $runAt = (new \DateTimeImmutable())->modify("+{$transition->timeout->afterSeconds} seconds");
             $this->scheduler->dispatchAt(
                 jobClass: WorkflowTimeoutJob::class,
@@ -251,7 +251,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     private function assertDependenciesAvailable(): void
     {
-        if ($this->registry === null || $this->instanceRepo === null || $this->historyRepo === null) {
+        if (!isset($this->registry) || !isset($this->instanceRepo) || !isset($this->historyRepo)) {
             throw new \RuntimeException('WorkflowEngine dependencies are not available.');
         }
     }
@@ -261,7 +261,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         ApplyTransitionCommand $command,
     ): array {
-        if ($transition->guards === [] || $this->container === null) {
+        if ($transition->guards === [] || !isset($this->container)) {
             return [];
         }
 
@@ -367,7 +367,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         ApplyTransitionCommand $command,
     ): array {
-        if ($transition->sideEffects === [] || $this->container === null) {
+        if ($transition->sideEffects === [] || !isset($this->container)) {
             return [];
         }
 
@@ -449,7 +449,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     private function dispatchEvent(string $eventClass, array $data): void
     {
-        if ($this->eventDispatcher === null) {
+        if (!isset($this->eventDispatcher)) {
             return;
         }
         $event = $this->eventDispatcher->create($eventClass, $data);

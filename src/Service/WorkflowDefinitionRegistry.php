@@ -23,7 +23,7 @@ use Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException;
 final class WorkflowDefinitionRegistry
 {
     #[InjectAsReadonly]
-    protected ?ClassDiscovery $classDiscovery = null;
+    protected ClassDiscovery $classDiscovery;
 
     /** @var array<string, WorkflowDefinitionInterface> keyed by workflow key */
     private array $definitions = [];
