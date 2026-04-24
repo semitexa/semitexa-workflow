@@ -18,7 +18,7 @@ use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInterface
 {
     #[InjectAsReadonly]
-    protected ?OrmManager $orm = null;
+    protected OrmManager $orm;
 
     private ?DomainRepository $repository = null;
 

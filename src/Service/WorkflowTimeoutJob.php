@@ -24,11 +24,11 @@ use Semitexa\Workflow\Enum\WorkflowStatus;
 final class WorkflowTimeoutJob implements ScheduledJobInterface
 {
     #[InjectAsReadonly]
-    protected ?WorkflowEngineInterface $engine = null;
+    protected WorkflowEngineInterface $engine;
 
     public function handle(ScheduledJobContext $context): void
     {
-        if ($this->engine === null) {
+        if (!isset($this->engine)) {
             return;
         }
 
