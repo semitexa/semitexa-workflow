@@ -11,7 +11,7 @@ use Semitexa\Orm\Query\Direction;
 use Semitexa\Orm\Query\Operator;
 use Semitexa\Orm\Repository\DomainRepository;
 use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowTransitionHistoryResourceModel;
-use Semitexa\Workflow\Contract\WorkflowTransitionHistoryRepositoryInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowTransitionHistoryRepositoryInterface;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 
 #[SatisfiesRepositoryContract(of: WorkflowTransitionHistoryRepositoryInterface::class)]

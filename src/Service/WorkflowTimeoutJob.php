@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Semitexa\Workflow\Service;
 
 use Semitexa\Core\Attribute\InjectAsReadonly;
-use Semitexa\Scheduler\Contract\ScheduledJobInterface;
-use Semitexa\Scheduler\Domain\Value\ScheduledJobContext;
-use Semitexa\Workflow\Contract\WorkflowEngineInterface;
+use Semitexa\Scheduler\Domain\Contract\ScheduledJobInterface;
+use Semitexa\Scheduler\Domain\Model\ScheduledJobContext;
+use Semitexa\Workflow\Domain\Contract\WorkflowEngineInterface;
 use Semitexa\Workflow\Domain\Command\ApplyTransitionCommand;
 use Semitexa\Workflow\Domain\Exception\WorkflowInstanceNotFoundException;
 use Semitexa\Workflow\Enum\TriggerType;

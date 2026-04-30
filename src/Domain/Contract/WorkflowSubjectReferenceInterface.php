@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Contract;
+namespace Semitexa\Workflow\Domain\Contract;
 
 /**
  * Identifies the domain subject of a workflow instance.

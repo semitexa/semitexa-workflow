@@ -17,12 +17,12 @@ use Semitexa\Workflow\Application\Payload\Event\WorkflowManualActionRequired;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowStarted;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowTransitionApplied;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowTransitionRejected;
-use Semitexa\Workflow\Contract\WorkflowEngineInterface;
-use Semitexa\Workflow\Contract\WorkflowGuardInterface;
-use Semitexa\Workflow\Contract\WorkflowInstanceRepositoryInterface;
-use Semitexa\Workflow\Contract\WorkflowSideEffectInterface;
-use Semitexa\Workflow\Contract\WorkflowSubjectReferenceInterface;
-use Semitexa\Workflow\Contract\WorkflowTransitionHistoryRepositoryInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowEngineInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowGuardInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowInstanceRepositoryInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowSideEffectInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowSubjectReferenceInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowTransitionHistoryRepositoryInterface;
 use Semitexa\Workflow\Domain\Command\ApplyTransitionCommand;
 use Semitexa\Workflow\Domain\Command\StartWorkflowCommand;
 use Semitexa\Workflow\Domain\Exception\WorkflowAlreadyExistsException;
@@ -33,7 +33,7 @@ use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 use Semitexa\Workflow\Domain\Value\WorkflowTransitionResult;
 use Semitexa\Workflow\Enum\TransitionResultEnum;
 use Semitexa\Workflow\Enum\WorkflowStatus;
-use Semitexa\Scheduler\Contract\SchedulerInterface;
+use Semitexa\Scheduler\Domain\Contract\SchedulerInterface;
 
 #[SatisfiesServiceContract(of: WorkflowEngineInterface::class)]
 final class WorkflowEngine implements WorkflowEngineInterface
