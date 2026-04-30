@@ -11,7 +11,7 @@ use Semitexa\Orm\Query\Operator;
 use Semitexa\Orm\Repository\DomainRepository;
 use Semitexa\Orm\Uuid\Uuid7;
 use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowInstanceResourceModel;
-use Semitexa\Workflow\Contract\WorkflowInstanceRepositoryInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowInstanceRepositoryInterface;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 
 #[SatisfiesRepositoryContract(of: WorkflowInstanceRepositoryInterface::class)]

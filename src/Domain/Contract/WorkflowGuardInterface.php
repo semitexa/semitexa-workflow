@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Contract;
+namespace Semitexa\Workflow\Domain\Contract;
 
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;

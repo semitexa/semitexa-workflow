@@ -8,7 +8,7 @@ use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Discovery\ClassDiscovery;
 use Semitexa\Workflow\Attribute\AsWorkflowDefinition;
-use Semitexa\Workflow\Contract\WorkflowDefinitionInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowDefinitionInterface;
 use Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException;
 
 /**
