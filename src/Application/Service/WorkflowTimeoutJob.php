@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Service;
+namespace Semitexa\Workflow\Application\Service;
 
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Scheduler\Domain\Contract\ScheduledJobInterface;
@@ -10,8 +10,8 @@ use Semitexa\Scheduler\Domain\Model\ScheduledJobContext;
 use Semitexa\Workflow\Domain\Contract\WorkflowEngineInterface;
 use Semitexa\Workflow\Domain\Command\ApplyTransitionCommand;
 use Semitexa\Workflow\Domain\Exception\WorkflowInstanceNotFoundException;
-use Semitexa\Workflow\Enum\TriggerType;
-use Semitexa\Workflow\Enum\WorkflowStatus;
+use Semitexa\Workflow\Domain\Enum\TriggerType;
+use Semitexa\Workflow\Domain\Enum\WorkflowStatus;
 
 /**
  * Scheduler job that fires a timeout-triggered transition on a workflow instance.

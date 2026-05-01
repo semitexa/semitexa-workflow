@@ -7,7 +7,7 @@ namespace Semitexa\Workflow\Domain\Contract;
 use Semitexa\Workflow\Domain\Command\ApplyTransitionCommand;
 use Semitexa\Workflow\Domain\Command\StartWorkflowCommand;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
-use Semitexa\Workflow\Domain\Value\WorkflowTransitionResult;
+use Semitexa\Workflow\Domain\Model\WorkflowTransitionResult;
 
 interface WorkflowEngineInterface
 {

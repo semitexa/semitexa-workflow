@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Application\Db\MySQL\Model;
+namespace Semitexa\Workflow\Application\Db\MySQL\Mapper;
 
 use Semitexa\Orm\Attribute\AsMapper;
 use Semitexa\Orm\Domain\Contract\ResourceModelMapperInterface;
+use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowInstanceResourceModel;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 
 #[AsMapper(resourceModel: WorkflowInstanceResourceModel::class, domainModel: WorkflowInstance::class)]

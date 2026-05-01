@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Domain\Value;
+namespace Semitexa\Workflow\Domain\Model;
 
-use Semitexa\Workflow\Enum\TransitionResultEnum;
+use Semitexa\Workflow\Domain\Enum\TransitionResultEnum;
 
 final readonly class WorkflowTransitionResult
 {

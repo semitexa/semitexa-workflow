@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Domain\Command;
 
-use Semitexa\Workflow\Enum\TriggerType;
+use Semitexa\Workflow\Domain\Enum\TriggerType;
 
 final readonly class ApplyTransitionCommand
 {

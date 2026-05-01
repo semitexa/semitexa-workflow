@@ -9,7 +9,7 @@ use Semitexa\Core\Attribute\SatisfiesRepositoryContract;
 use Semitexa\Orm\OrmManager;
 use Semitexa\Orm\Query\Operator;
 use Semitexa\Orm\Repository\DomainRepository;
-use Semitexa\Orm\Uuid\Uuid7;
+use Semitexa\Orm\Application\Service\Uuid7;
 use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowInstanceResourceModel;
 use Semitexa\Workflow\Domain\Contract\WorkflowInstanceRepositoryInterface;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;

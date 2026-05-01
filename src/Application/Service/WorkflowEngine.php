@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Service;
+namespace Semitexa\Workflow\Application\Service;
 
 use Psr\Container\ContainerInterface;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Event\EventDispatcherInterface;
-use Semitexa\Orm\Transaction\TransactionManager;
-use Semitexa\Orm\Uuid\Uuid7;
+use Semitexa\Orm\Application\Service\Transaction\TransactionManager;
+use Semitexa\Orm\Application\Service\Uuid7;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowCompleted;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowEnteredWaitingState;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowFailed;
@@ -30,9 +30,9 @@ use Semitexa\Workflow\Domain\Exception\WorkflowInstanceNotFoundException;
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
-use Semitexa\Workflow\Domain\Value\WorkflowTransitionResult;
-use Semitexa\Workflow\Enum\TransitionResultEnum;
-use Semitexa\Workflow\Enum\WorkflowStatus;
+use Semitexa\Workflow\Domain\Model\WorkflowTransitionResult;
+use Semitexa\Workflow\Domain\Enum\TransitionResultEnum;
+use Semitexa\Workflow\Domain\Enum\WorkflowStatus;
 use Semitexa\Scheduler\Domain\Contract\SchedulerInterface;
 
 #[SatisfiesServiceContract(of: WorkflowEngineInterface::class)]

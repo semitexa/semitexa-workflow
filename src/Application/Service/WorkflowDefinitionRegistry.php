@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Service;
+namespace Semitexa\Workflow\Application\Service;
 
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;

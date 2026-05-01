@@ -53,7 +53,7 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
     {
         $result = $this->adapter()->execute(
             'SELECT COUNT(*) as cnt FROM workflow_transition_history WHERE workflow_instance_id = :id AND transition_key = :tk',
-            ['id' => \Semitexa\Orm\Uuid\Uuid7::toBytes($instanceId), 'tk' => $transitionKey],
+            ['id' => \Semitexa\Orm\Application\Service\Uuid7::toBytes($instanceId), 'tk' => $transitionKey],
         );
 
         return (int) ($result->rows[0]['cnt'] ?? 0);

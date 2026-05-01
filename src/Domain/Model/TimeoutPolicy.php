@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Domain\Value;
+namespace Semitexa\Workflow\Domain\Model;
 
 final readonly class TimeoutPolicy
 {

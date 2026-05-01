@@ -6,7 +6,7 @@ namespace Semitexa\Workflow\Domain\Contract;
 
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
-use Semitexa\Workflow\Domain\Value\GuardResult;
+use Semitexa\Workflow\Domain\Model\GuardResult;
 
 /**
  * Evaluates whether a transition is allowed.

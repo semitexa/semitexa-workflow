@@ -6,7 +6,7 @@ namespace Semitexa\Workflow\Domain\Contract;
 
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
-use Semitexa\Workflow\Domain\Value\SideEffectResult;
+use Semitexa\Workflow\Domain\Model\SideEffectResult;
 
 /**
  * Executes a side-effect after a successful state transition.

@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Domain\Value;
+namespace Semitexa\Workflow\Domain\Model;
 
-final readonly class SideEffectResult
+final readonly class GuardResult
 {
     private function __construct(
-        public bool $succeeded,
+        public bool $passed,
         public ?string $failureCode,
         public ?string $failureMessage,
     ) {}
 
-    public static function success(): self
+    public static function pass(): self
     {
         return new self(true, null, null);
     }
 
-    public static function failure(string $failureCode, string $failureMessage): self
+    public static function deny(string $failureCode, string $failureMessage): self
     {
         return new self(false, $failureCode, $failureMessage);
     }
