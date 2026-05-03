@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Contract;
+namespace Semitexa\Workflow\Domain\Contract;
 
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
-use Semitexa\Workflow\Domain\Value\GuardResult;
+use Semitexa\Workflow\Domain\Model\GuardResult;
 
 /**
  * Evaluates whether a transition is allowed.

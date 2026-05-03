@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Domain\Command;
 
-use Semitexa\Workflow\Contract\WorkflowSubjectReferenceInterface;
+use Semitexa\Workflow\Domain\Contract\WorkflowSubjectReferenceInterface;
 
 final readonly class StartWorkflowCommand
 {

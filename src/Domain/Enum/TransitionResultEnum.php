@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Enum;
+namespace Semitexa\Workflow\Domain\Enum;
 
 enum TransitionResultEnum: string
 {

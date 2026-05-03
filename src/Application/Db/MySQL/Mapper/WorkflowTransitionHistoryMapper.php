@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Workflow\Application\Db\MySQL\Model;
+namespace Semitexa\Workflow\Application\Db\MySQL\Mapper;
 
 use Semitexa\Orm\Attribute\AsMapper;
-use Semitexa\Orm\Contract\ResourceModelMapperInterface;
+use Semitexa\Orm\Domain\Contract\ResourceModelMapperInterface;
+use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowTransitionHistoryResourceModel;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 
 #[AsMapper(resourceModel: WorkflowTransitionHistoryResourceModel::class, domainModel: WorkflowTransitionHistory::class)]

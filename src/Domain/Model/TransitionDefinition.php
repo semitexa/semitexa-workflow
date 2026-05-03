@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Domain\Model;
 
-use Semitexa\Workflow\Domain\Value\RetryPolicy;
-use Semitexa\Workflow\Domain\Value\TimeoutPolicy;
-use Semitexa\Workflow\Enum\TriggerType;
+use Semitexa\Workflow\Domain\Model\RetryPolicy;
+use Semitexa\Workflow\Domain\Model\TimeoutPolicy;
+use Semitexa\Workflow\Domain\Enum\TriggerType;
 
 final readonly class TransitionDefinition
 {
