@@ -33,6 +33,5 @@
         "state-machine",
         "orchestration",
         "business-process"
-    ],
-    "version": "v0.0.4"
+    ]
 }
