@@ -1,6 +1,6 @@
 {
     "name": "semitexa/workflow",
-    "description": "Semitexa Workflow — stateful business process orchestration with code-defined state machines, transition guards, side-effects, history, and scheduler integration",
+    "description": "Semitexa Workflow \u2014 stateful business process orchestration with code-defined state machines, transition guards, side-effects, history, and scheduler integration",
     "type": "semitexa-module",
     "license": "MIT",
     "authors": [
@@ -33,6 +33,5 @@
         "state-machine",
         "orchestration",
         "business-process"
-    ],
-    "version": "v0.0.4"
+    ]
 }
