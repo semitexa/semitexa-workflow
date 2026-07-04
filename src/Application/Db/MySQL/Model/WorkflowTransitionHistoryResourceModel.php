@@ -7,11 +7,15 @@ namespace Semitexa\Workflow\Application\Db\MySQL\Model;
 use Semitexa\Orm\Adapter\MySqlType;
 use Semitexa\Orm\Attribute\Column;
 use Semitexa\Orm\Attribute\FromTable;
+use Semitexa\Orm\Attribute\Index;
 use Semitexa\Orm\Attribute\PrimaryKey;
 use Semitexa\Orm\Metadata\HasColumnReferences;
 use Semitexa\Orm\Metadata\HasRelationReferences;
 
 #[FromTable(name: 'workflow_transition_history')]
+#[Index(columns: ['workflow_instance_id', 'created_at'], name: 'idx_workflow_history_instance_created')]
+#[Index(columns: ['transition_key', 'created_at'], name: 'idx_workflow_history_transition_created')]
+#[Index(columns: ['result', 'created_at'], name: 'idx_workflow_history_result_created')]
 final readonly class WorkflowTransitionHistoryResourceModel
 {
     use HasColumnReferences;

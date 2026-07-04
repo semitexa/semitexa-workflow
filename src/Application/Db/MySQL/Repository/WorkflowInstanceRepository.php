@@ -8,6 +8,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesRepositoryContract;
 use Semitexa\Orm\OrmManager;
 use Semitexa\Orm\Query\Operator;
+use Semitexa\Orm\Query\SystemScopeToken;
 use Semitexa\Orm\Repository\DomainRepository;
 use Semitexa\Orm\Application\Service\Uuid7;
 use Semitexa\Workflow\Application\Db\MySQL\Model\WorkflowInstanceResourceModel;
@@ -22,16 +23,18 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
 
     private ?DomainRepository $repository = null;
 
+    private ?DomainRepository $system = null;
+
     public function findById(string $id): ?WorkflowInstance
     {
         /** @var WorkflowInstance|null */
-        return $this->repository()->findById($id);
+        return $this->system()->findById($id);
     }
 
     public function findBySubject(string $workflowKey, string $subjectType, string $subjectId): ?WorkflowInstance
     {
         /** @var WorkflowInstance|null */
-        return $this->repository()->query()
+        return $this->system()->query()
             ->where(WorkflowInstanceResourceModel::column('workflowKey'), Operator::Equals, $workflowKey)
             ->where(WorkflowInstanceResourceModel::column('subjectType'), Operator::Equals, $subjectType)
             ->where(WorkflowInstanceResourceModel::column('subjectId'), Operator::Equals, $subjectId)
@@ -66,8 +69,8 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
         }
 
         $persisted = $entity->id === ''
-            ? $this->repository()->insert($entity)
-            : $this->repository()->update($entity);
+            ? $this->system()->insert($entity)
+            : $this->system()->update($entity);
 
         $this->copyIntoMutableDomain($persisted, $entity);
     }
@@ -114,6 +117,21 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
         }
 
         return false;
+    }
+
+    /**
+     * SYSTEM-scope view of the store — deliberately cross-tenant.
+     *
+     * The workflow ENGINE addresses instances by id / by subject triple as
+     * infrastructure (transitions run in system context), and
+     * {@see findOverdueWaiting} is the scheduler's sweep across ALL tenants by
+     * design — do not tenant-scope it. The resource is #[TenantScoped], so any
+     * FUTURE tenant-facing finder must call forTenant(...) or consciously copy
+     * this token-marked posture — unscoped queries fail closed.
+     */
+    private function system(): DomainRepository
+    {
+        return $this->system ??= $this->repository()->withoutTenantScope(SystemScopeToken::issue());
     }
 
     private function repository(): DomainRepository
