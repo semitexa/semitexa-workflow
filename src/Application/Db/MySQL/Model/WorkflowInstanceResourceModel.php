@@ -7,11 +7,18 @@ namespace Semitexa\Workflow\Application\Db\MySQL\Model;
 use Semitexa\Orm\Adapter\MySqlType;
 use Semitexa\Orm\Attribute\Column;
 use Semitexa\Orm\Attribute\FromTable;
+use Semitexa\Orm\Attribute\Index;
 use Semitexa\Orm\Attribute\PrimaryKey;
+use Semitexa\Orm\Attribute\TenantScoped;
 use Semitexa\Orm\Metadata\HasColumnReferences;
 use Semitexa\Orm\Metadata\HasRelationReferences;
 
 #[FromTable(name: 'workflow_instances')]
+#[Index(columns: ['workflow_key', 'subject_type', 'subject_id'], unique: true, name: 'uniq_workflow_instance_subject')]
+#[Index(columns: ['tenant_id', 'status', 'waiting_until'], name: 'idx_workflow_instances_tenant_status_waiting')]
+#[Index(columns: ['workflow_key', 'current_state'], name: 'idx_workflow_instances_key_state')]
+#[Index(columns: ['awaiting_manual_action', 'updated_at'], name: 'idx_workflow_instances_manual_action')]
+#[TenantScoped(strategy: 'same_storage', column: 'tenantId')]
 final readonly class WorkflowInstanceResourceModel
 {
     use HasColumnReferences;
