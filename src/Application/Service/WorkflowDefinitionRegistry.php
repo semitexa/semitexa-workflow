@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Application\Service;
 
+use Psr\Container\ContainerInterface;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Discovery\ClassDiscovery;
@@ -22,6 +23,15 @@ use Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException;
 #[AsService]
 final class WorkflowDefinitionRegistry
 {
+    /**
+     * Injected rather than reached for statically. A workflow definition is
+     * usually a plain holder, so the container is consulted only to give one
+     * that wants injected dependencies a chance to get them — the same shape
+     * MediaCollectionRegistry uses for its providers.
+     */
+    #[InjectAsReadonly]
+    protected ContainerInterface $container;
+
     #[InjectAsReadonly]
     protected ClassDiscovery $classDiscovery;
 
@@ -66,8 +76,27 @@ final class WorkflowDefinitionRegistry
                 continue;
             }
 
+            // The container branch is the only thing inside the try.
+            // Constructing the definition directly in the catch as well would
+            // answer a throwing constructor by running that same constructor
+            // AGAIN — repeating whatever side effects it managed before
+            // failing, and discarding the original error for the second one.
+            //
+            // isset(): the injected property is UNINITIALIZED, not null, when
+            // this registry is built outside the container, and reading it
+            // directly would throw rather than fall through.
+            $definition = null;
+            if (isset($this->container)) {
+                try {
+                    $resolved = $this->container->get($className);
+                    $definition = $resolved instanceof WorkflowDefinitionInterface ? $resolved : null;
+                } catch (\Throwable) {
+                    $definition = null;
+                }
+            }
+
             /** @var WorkflowDefinitionInterface $definition */
-            $definition = new $className();
+            $definition ??= new $className();
             $key = $className::key();
             $this->definitions[$key] = $definition;
         }
