@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Application\Service;
 
+use Psr\Container\ContainerInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Discovery\ClassDiscovery;
@@ -22,6 +24,15 @@ use Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException;
 #[AsService]
 final class WorkflowDefinitionRegistry
 {
+    /**
+     * Injected rather than reached for statically. A workflow definition is
+     * usually a plain holder, so the container is consulted only to give one
+     * that wants injected dependencies a chance to get them — the same shape
+     * MediaCollectionRegistry uses for its providers.
+     */
+    #[InjectAsReadonly]
+    protected ContainerInterface $container;
+
     #[InjectAsReadonly]
     protected ClassDiscovery $classDiscovery;
 
@@ -66,8 +77,28 @@ final class WorkflowDefinitionRegistry
                 continue;
             }
 
-            /** @var WorkflowDefinitionInterface $definition */
-            $definition = new $className();
+            // Only a REFUSAL falls through to `new`. Catching \Throwable here
+            // would treat a container that failed while producing the service
+            // the same as one that never had it — and the fallback below would
+            // then construct the definition anyway, losing the real error and
+            // handing back an object whose injected properties are unset. That
+            // is the failure this change exists to remove, so it must not be
+            // reintroduced by a catch that is too wide.
+            //
+            // isset(): the injected property is UNINITIALIZED, not null, when
+            // this registry is built outside the container, and reading it
+            // directly would throw rather than fall through.
+            $definition = null;
+            if (isset($this->container)) {
+                try {
+                    $resolved = $this->container->get($className);
+                    $definition = $resolved instanceof WorkflowDefinitionInterface ? $resolved : null;
+                } catch (NotFoundExceptionInterface) {
+                    $definition = null;
+                }
+            }
+
+            $definition ??= new $className();
             $key = $className::key();
             $this->definitions[$key] = $definition;
         }
