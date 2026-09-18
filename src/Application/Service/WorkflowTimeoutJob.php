@@ -47,7 +47,7 @@ final class WorkflowTimeoutJob implements ScheduledJobInterface
         }
 
         // If the instance is already in a terminal state, skip.
-        if (WorkflowStatus::from($instance->status)->isTerminal()) {
+        if (WorkflowStatus::from($instance->getStatus())->isTerminal()) {
             return;
         }
 

@@ -32,7 +32,7 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
             ));
         }
 
-        $persisted = $entity->id === ''
+        $persisted = $entity->getId() === ''
             ? $this->repository()->insert($entity)
             : $this->repository()->update($entity);
 

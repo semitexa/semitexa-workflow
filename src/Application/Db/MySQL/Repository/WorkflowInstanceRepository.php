@@ -68,7 +68,7 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
             throw new \InvalidArgumentException(sprintf('Expected %s, got %s.', WorkflowInstance::class, $entity::class));
         }
 
-        $persisted = $entity->id === ''
+        $persisted = $entity->getId() === ''
             ? $this->system()->insert($entity)
             : $this->system()->update($entity);
 
@@ -94,25 +94,25 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
                  updated_at = :updated_at
              WHERE id = :id AND version = :expected_version",
             [
-                'current_state' => $instance->currentState,
-                'status' => $instance->status,
-                'new_version' => $instance->version,
-                'active_transition_key' => $instance->activeTransitionKey,
-                'last_error_code' => $instance->lastErrorCode,
-                'last_error_message' => $instance->lastErrorMessage,
-                'waiting_until' => $instance->waitingUntil?->format('Y-m-d H:i:s.u'),
-                'awaiting_manual_action' => $instance->awaitingManualAction ? 1 : 0,
-                'payload_json' => $instance->payloadJson,
-                'context_json' => $instance->contextJson,
-                'completed_at' => $instance->completedAt?->format('Y-m-d H:i:s.u'),
+                'current_state' => $instance->getCurrentState(),
+                'status' => $instance->getStatus(),
+                'new_version' => $instance->getVersion(),
+                'active_transition_key' => $instance->getActiveTransitionKey(),
+                'last_error_code' => $instance->getLastErrorCode(),
+                'last_error_message' => $instance->getLastErrorMessage(),
+                'waiting_until' => $instance->getWaitingUntil()?->format('Y-m-d H:i:s.u'),
+                'awaiting_manual_action' => $instance->isAwaitingManualAction() ? 1 : 0,
+                'payload_json' => $instance->getPayloadJson(),
+                'context_json' => $instance->getContextJson(),
+                'completed_at' => $instance->getCompletedAt()?->format('Y-m-d H:i:s.u'),
                 'updated_at' => $now->format('Y-m-d H:i:s.u'),
-                'id' => Uuid7::toBytes($instance->id),
+                'id' => Uuid7::toBytes($instance->getId()),
                 'expected_version' => $expectedVersion,
             ],
         );
 
         if ($result->rowCount > 0) {
-            $instance->updatedAt = $now;
+            $instance->setUpdatedAt($now);
             return true;
         }
 
