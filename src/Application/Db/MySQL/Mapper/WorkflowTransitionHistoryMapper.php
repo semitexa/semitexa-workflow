@@ -17,20 +17,20 @@ final class WorkflowTransitionHistoryMapper implements ResourceModelMapperInterf
         $resourceModel instanceof WorkflowTransitionHistoryResourceModel || throw new \InvalidArgumentException('Unexpected resource model.');
 
         $history = new WorkflowTransitionHistory();
-        $history->id = $resourceModel->id;
-        $history->workflowInstanceId = $resourceModel->workflowInstanceId;
-        $history->transitionKey = $resourceModel->transitionKey;
-        $history->fromState = $resourceModel->fromState;
-        $history->toState = $resourceModel->toState;
-        $history->triggerType = $resourceModel->triggerType;
-        $history->triggeredByType = $resourceModel->triggeredByType;
-        $history->triggeredById = $resourceModel->triggeredById;
-        $history->attempt = $resourceModel->attempt;
-        $history->result = $resourceModel->result;
-        $history->guardFailuresJson = $resourceModel->guardFailuresJson;
-        $history->sideEffectFailuresJson = $resourceModel->sideEffectFailuresJson;
-        $history->metadataJson = $resourceModel->metadataJson;
-        $history->createdAt = $resourceModel->createdAt;
+        $history->setId($resourceModel->id);
+        $history->setWorkflowInstanceId($resourceModel->workflowInstanceId);
+        $history->setTransitionKey($resourceModel->transitionKey);
+        $history->setFromState($resourceModel->fromState);
+        $history->setToState($resourceModel->toState);
+        $history->setTriggerType($resourceModel->triggerType);
+        $history->setTriggeredByType($resourceModel->triggeredByType);
+        $history->setTriggeredById($resourceModel->triggeredById);
+        $history->setAttempt($resourceModel->attempt);
+        $history->setResult($resourceModel->result);
+        $history->setGuardFailuresJson($resourceModel->guardFailuresJson);
+        $history->setSideEffectFailuresJson($resourceModel->sideEffectFailuresJson);
+        $history->setMetadataJson($resourceModel->metadataJson);
+        $history->setCreatedAt($resourceModel->createdAt);
 
         return $history;
     }
@@ -40,20 +40,20 @@ final class WorkflowTransitionHistoryMapper implements ResourceModelMapperInterf
         $domainModel instanceof WorkflowTransitionHistory || throw new \InvalidArgumentException('Unexpected domain model.');
 
         return new WorkflowTransitionHistoryResourceModel(
-            id: $domainModel->id,
-            workflowInstanceId: $domainModel->workflowInstanceId,
-            transitionKey: $domainModel->transitionKey,
-            fromState: $domainModel->fromState,
-            toState: $domainModel->toState,
-            triggerType: $domainModel->triggerType,
-            triggeredByType: $domainModel->triggeredByType,
-            triggeredById: $domainModel->triggeredById,
-            attempt: $domainModel->attempt,
-            result: $domainModel->result,
-            guardFailuresJson: $domainModel->guardFailuresJson,
-            sideEffectFailuresJson: $domainModel->sideEffectFailuresJson,
-            metadataJson: $domainModel->metadataJson,
-            createdAt: $domainModel->createdAt,
+            id: $domainModel->getId(),
+            workflowInstanceId: $domainModel->getWorkflowInstanceId(),
+            transitionKey: $domainModel->getTransitionKey(),
+            fromState: $domainModel->getFromState(),
+            toState: $domainModel->getToState(),
+            triggerType: $domainModel->getTriggerType(),
+            triggeredByType: $domainModel->getTriggeredByType(),
+            triggeredById: $domainModel->getTriggeredById(),
+            attempt: $domainModel->getAttempt(),
+            result: $domainModel->getResult(),
+            guardFailuresJson: $domainModel->getGuardFailuresJson(),
+            sideEffectFailuresJson: $domainModel->getSideEffectFailuresJson(),
+            metadataJson: $domainModel->getMetadataJson(),
+            createdAt: $domainModel->getCreatedAt(),
         );
     }
 }

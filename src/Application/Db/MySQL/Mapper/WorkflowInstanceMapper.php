@@ -17,24 +17,24 @@ final class WorkflowInstanceMapper implements ResourceModelMapperInterface
         $resourceModel instanceof WorkflowInstanceResourceModel || throw new \InvalidArgumentException('Unexpected resource model.');
 
         $instance = new WorkflowInstance();
-        $instance->id = $resourceModel->id;
-        $instance->workflowKey = $resourceModel->workflowKey;
-        $instance->subjectType = $resourceModel->subjectType;
-        $instance->subjectId = $resourceModel->subjectId;
-        $instance->tenantId = $resourceModel->tenantId;
-        $instance->currentState = $resourceModel->currentState;
-        $instance->status = $resourceModel->status;
-        $instance->version = $resourceModel->version;
-        $instance->activeTransitionKey = $resourceModel->activeTransitionKey;
-        $instance->lastErrorCode = $resourceModel->lastErrorCode;
-        $instance->lastErrorMessage = $resourceModel->lastErrorMessage;
-        $instance->waitingUntil = $resourceModel->waitingUntil;
-        $instance->awaitingManualAction = $resourceModel->awaitingManualAction;
-        $instance->payloadJson = $resourceModel->payloadJson;
-        $instance->contextJson = $resourceModel->contextJson;
-        $instance->createdAt = $resourceModel->createdAt;
-        $instance->updatedAt = $resourceModel->updatedAt;
-        $instance->completedAt = $resourceModel->completedAt;
+        $instance->setId($resourceModel->id);
+        $instance->setWorkflowKey($resourceModel->workflowKey);
+        $instance->setSubjectType($resourceModel->subjectType);
+        $instance->setSubjectId($resourceModel->subjectId);
+        $instance->setTenantId($resourceModel->tenantId);
+        $instance->setCurrentState($resourceModel->currentState);
+        $instance->setStatus($resourceModel->status);
+        $instance->setVersion($resourceModel->version);
+        $instance->setActiveTransitionKey($resourceModel->activeTransitionKey);
+        $instance->setLastErrorCode($resourceModel->lastErrorCode);
+        $instance->setLastErrorMessage($resourceModel->lastErrorMessage);
+        $instance->setWaitingUntil($resourceModel->waitingUntil);
+        $instance->setAwaitingManualAction($resourceModel->awaitingManualAction);
+        $instance->setPayloadJson($resourceModel->payloadJson);
+        $instance->setContextJson($resourceModel->contextJson);
+        $instance->setCreatedAt($resourceModel->createdAt);
+        $instance->setUpdatedAt($resourceModel->updatedAt);
+        $instance->setCompletedAt($resourceModel->completedAt);
 
         return $instance;
     }
@@ -44,24 +44,24 @@ final class WorkflowInstanceMapper implements ResourceModelMapperInterface
         $domainModel instanceof WorkflowInstance || throw new \InvalidArgumentException('Unexpected domain model.');
 
         return new WorkflowInstanceResourceModel(
-            id: $domainModel->id,
-            workflowKey: $domainModel->workflowKey,
-            subjectType: $domainModel->subjectType,
-            subjectId: $domainModel->subjectId,
-            tenantId: $domainModel->tenantId,
-            currentState: $domainModel->currentState,
-            status: $domainModel->status,
-            version: $domainModel->version,
-            activeTransitionKey: $domainModel->activeTransitionKey,
-            lastErrorCode: $domainModel->lastErrorCode,
-            lastErrorMessage: $domainModel->lastErrorMessage,
-            waitingUntil: $domainModel->waitingUntil,
-            awaitingManualAction: $domainModel->awaitingManualAction,
-            payloadJson: $domainModel->payloadJson,
-            contextJson: $domainModel->contextJson,
-            createdAt: $domainModel->createdAt,
-            updatedAt: $domainModel->updatedAt,
-            completedAt: $domainModel->completedAt,
+            id: $domainModel->getId(),
+            workflowKey: $domainModel->getWorkflowKey(),
+            subjectType: $domainModel->getSubjectType(),
+            subjectId: $domainModel->getSubjectId(),
+            tenantId: $domainModel->getTenantId(),
+            currentState: $domainModel->getCurrentState(),
+            status: $domainModel->getStatus(),
+            version: $domainModel->getVersion(),
+            activeTransitionKey: $domainModel->getActiveTransitionKey(),
+            lastErrorCode: $domainModel->getLastErrorCode(),
+            lastErrorMessage: $domainModel->getLastErrorMessage(),
+            waitingUntil: $domainModel->getWaitingUntil(),
+            awaitingManualAction: $domainModel->isAwaitingManualAction(),
+            payloadJson: $domainModel->getPayloadJson(),
+            contextJson: $domainModel->getContextJson(),
+            createdAt: $domainModel->getCreatedAt(),
+            updatedAt: $domainModel->getUpdatedAt(),
+            completedAt: $domainModel->getCompletedAt(),
         );
     }
 }

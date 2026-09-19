@@ -79,27 +79,27 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
 
         $instance = new WorkflowInstance();
-        $instance->workflowKey = $command->workflowKey;
-        $instance->subjectType = $command->subject->workflowSubjectType();
-        $instance->subjectId = $command->subject->workflowSubjectId();
-        $instance->tenantId = $command->subject->workflowTenantId();
-        $instance->currentState = $definition->initialState();
-        $instance->status = WorkflowStatus::Active->value;
-        $instance->version = 0;
-        $instance->payloadJson = $command->payload !== [] ? json_encode($command->payload, JSON_THROW_ON_ERROR) : null;
-        $instance->contextJson = $command->context !== [] ? json_encode($command->context, JSON_THROW_ON_ERROR) : null;
-        $instance->createdAt = new \DateTimeImmutable();
-        $instance->updatedAt = new \DateTimeImmutable();
+        $instance->setWorkflowKey($command->workflowKey);
+        $instance->setSubjectType($command->subject->workflowSubjectType());
+        $instance->setSubjectId($command->subject->workflowSubjectId());
+        $instance->setTenantId($command->subject->workflowTenantId());
+        $instance->setCurrentState($definition->initialState());
+        $instance->setStatus(WorkflowStatus::Active->value);
+        $instance->setVersion(0);
+        $instance->setPayloadJson($command->payload !== [] ? json_encode($command->payload, JSON_THROW_ON_ERROR) : null);
+        $instance->setContextJson($command->context !== [] ? json_encode($command->context, JSON_THROW_ON_ERROR) : null);
+        $instance->setCreatedAt(new \DateTimeImmutable());
+        $instance->setUpdatedAt(new \DateTimeImmutable());
 
         $this->instanceRepo->save($instance);
 
         $this->dispatchEvent(WorkflowStarted::class, [
-            'instanceId'   => $instance->id,
-            'workflowKey'  => $instance->workflowKey,
-            'subjectType'  => $instance->subjectType,
-            'subjectId'    => $instance->subjectId,
-            'tenantId'     => $instance->tenantId,
-            'initialState' => $instance->currentState,
+            'instanceId'   => $instance->getId(),
+            'workflowKey'  => $instance->getWorkflowKey(),
+            'subjectType'  => $instance->getSubjectType(),
+            'subjectId'    => $instance->getSubjectId(),
+            'tenantId'     => $instance->getTenantId(),
+            'initialState' => $instance->getCurrentState(),
         ]);
 
         return $instance;
@@ -117,76 +117,76 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
 
         // Reject if already in a terminal state
-        if (WorkflowStatus::from($instance->status)->isTerminal()) {
+        if (WorkflowStatus::from($instance->getStatus())->isTerminal()) {
             return WorkflowTransitionResult::rejectedInvalid(
-                instanceId: $instance->id,
+                instanceId: $instance->getId(),
                 transitionKey: $command->transitionKey,
-                fromState: $instance->currentState,
+                fromState: $instance->getCurrentState(),
                 failureCode: 'terminal_state',
-                failureMessage: "Workflow instance is in terminal status '{$instance->status}' and cannot be transitioned.",
+                failureMessage: "Workflow instance is in terminal status '{$instance->getStatus()}' and cannot be transitioned.",
             );
         }
 
         // Find matching transition definition
         $transition = null;
         foreach ($definition->transitions() as $t) {
-            if ($t->key === $command->transitionKey && $t->isValidFrom($instance->currentState)) {
+            if ($t->key === $command->transitionKey && $t->isValidFrom($instance->getCurrentState())) {
                 $transition = $t;
                 break;
             }
         }
 
         if ($transition === null) {
-            $this->recordHistory($instance, $instance->currentState, $command, null, TransitionResultEnum::RejectedInvalid, []);
+            $this->recordHistory($instance, $instance->getCurrentState(), $command, null, TransitionResultEnum::RejectedInvalid, []);
             $this->dispatchEvent(WorkflowTransitionRejected::class, [
-                'instanceId'      => $instance->id,
-                'workflowKey'     => $instance->workflowKey,
+                'instanceId'      => $instance->getId(),
+                'workflowKey'     => $instance->getWorkflowKey(),
                 'transitionKey'   => $command->transitionKey,
-                'fromState'       => $instance->currentState,
-                'rejectionReason' => "Transition '{$command->transitionKey}' is not valid from state '{$instance->currentState}'",
+                'fromState'       => $instance->getCurrentState(),
+                'rejectionReason' => "Transition '{$command->transitionKey}' is not valid from state '{$instance->getCurrentState()}'",
                 'failureCode'     => 'invalid_transition',
-                'tenantId'        => $instance->tenantId,
+                'tenantId'        => $instance->getTenantId(),
             ]);
             return WorkflowTransitionResult::rejectedInvalid(
-                instanceId: $instance->id,
+                instanceId: $instance->getId(),
                 transitionKey: $command->transitionKey,
-                fromState: $instance->currentState,
+                fromState: $instance->getCurrentState(),
                 failureCode: 'invalid_transition',
-                failureMessage: "Transition '{$command->transitionKey}' is not valid from state '{$instance->currentState}'.",
+                failureMessage: "Transition '{$command->transitionKey}' is not valid from state '{$instance->getCurrentState()}'.",
             );
         }
 
         // Evaluate guards
         $guardFailures = $this->evaluateGuards($transition, $instance, $command);
         if ($guardFailures !== []) {
-            $this->recordHistory($instance, $instance->currentState, $command, $transition, TransitionResultEnum::RejectedGuard, $guardFailures);
+            $this->recordHistory($instance, $instance->getCurrentState(), $command, $transition, TransitionResultEnum::RejectedGuard, $guardFailures);
             $this->dispatchEvent(WorkflowTransitionRejected::class, [
-                'instanceId'      => $instance->id,
-                'workflowKey'     => $instance->workflowKey,
+                'instanceId'      => $instance->getId(),
+                'workflowKey'     => $instance->getWorkflowKey(),
                 'transitionKey'   => $command->transitionKey,
-                'fromState'       => $instance->currentState,
+                'fromState'       => $instance->getCurrentState(),
                 'rejectionReason' => 'One or more guards denied the transition.',
                 'failureCode'     => 'guard_denied',
-                'tenantId'        => $instance->tenantId,
+                'tenantId'        => $instance->getTenantId(),
             ]);
             return WorkflowTransitionResult::rejectedGuard(
-                instanceId: $instance->id,
+                instanceId: $instance->getId(),
                 transitionKey: $command->transitionKey,
-                fromState: $instance->currentState,
+                fromState: $instance->getCurrentState(),
                 guardFailures: $guardFailures,
             );
         }
 
         // Apply the transition atomically
-        $fromState = $instance->currentState;
-        $expectedVersion = $instance->version;
+        $fromState = $instance->getCurrentState();
+        $expectedVersion = $instance->getVersion();
 
         $this->applyStateChange($instance, $transition, $command);
 
         $committed = $this->commitTransition($instance, $expectedVersion, $fromState, $command, $transition, $guardFailures);
         if (!$committed) {
             return WorkflowTransitionResult::rejectedConflict(
-                instanceId: $instance->id,
+                instanceId: $instance->getId(),
                 transitionKey: $command->transitionKey,
                 fromState: $fromState,
             );
@@ -204,13 +204,13 @@ final class WorkflowEngine implements WorkflowEngineInterface
                 jobClass: WorkflowTimeoutJob::class,
                 runAt: $runAt,
                 payload: [
-                    'workflowKey'   => $instance->workflowKey,
-                    'instanceId'    => $instance->id,
+                    'workflowKey'   => $instance->getWorkflowKey(),
+                    'instanceId'    => $instance->getId(),
                     'transitionKey' => $transition->timeout->transitionKey,
                 ],
                 pool: $transition->timeout->pool,
-                tenantId: $instance->tenantId,
-                lockKey: "workflow_timeout_{$instance->id}_{$transition->timeout->transitionKey}",
+                tenantId: $instance->getTenantId(),
+                lockKey: "workflow_timeout_{$instance->getId()}_{$transition->timeout->transitionKey}",
             );
             $scheduledFollowUp = true;
         }
@@ -219,10 +219,10 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $this->emitTransitionEvents($instance, $transition, $command, $fromState, $sideEffectFailures);
 
         return WorkflowTransitionResult::applied(
-            instanceId: $instance->id,
+            instanceId: $instance->getId(),
             transitionKey: $command->transitionKey,
             fromState: $fromState,
-            toState: $instance->currentState,
+            toState: $instance->getCurrentState(),
             scheduledFollowUp: $scheduledFollowUp,
         );
     }
@@ -291,31 +291,31 @@ final class WorkflowEngine implements WorkflowEngineInterface
     ): void {
         $definition = $this->registry->get($command->workflowKey);
 
-        $instance->currentState = $transition->toState;
-        $instance->version++;
-        $instance->lastErrorCode = null;
-        $instance->lastErrorMessage = null;
-        $instance->activeTransitionKey = null;
+        $instance->setCurrentState($transition->toState);
+        $instance->setVersion($instance->getVersion() + 1);
+        $instance->setLastErrorCode(null);
+        $instance->setLastErrorMessage(null);
+        $instance->setActiveTransitionKey(null);
 
         // Determine operational status
         if (in_array($transition->toState, $definition->terminalStates(), true)) {
             // Determine whether this is completed or failed based on the transition name convention
             // or simply use "completed" for terminal states reached via normal flow
-            $instance->status = WorkflowStatus::Completed->value;
-            $instance->completedAt = new \DateTimeImmutable();
-            $instance->waitingUntil = null;
-            $instance->awaitingManualAction = false;
+            $instance->setStatus(WorkflowStatus::Completed->value);
+            $instance->setCompletedAt(new \DateTimeImmutable());
+            $instance->setWaitingUntil(null);
+            $instance->setAwaitingManualAction(false);
         } elseif ($transition->requiresManualApproval) {
-            $instance->status = WorkflowStatus::AwaitingManualAction->value;
-            $instance->awaitingManualAction = true;
-            $instance->activeTransitionKey = $transition->key;
+            $instance->setStatus(WorkflowStatus::AwaitingManualAction->value);
+            $instance->setAwaitingManualAction(true);
+            $instance->setActiveTransitionKey($transition->key);
         } elseif ($transition->timeout !== null) {
-            $instance->status = WorkflowStatus::Waiting->value;
-            $instance->waitingUntil = (new \DateTimeImmutable())->modify("+{$transition->timeout->afterSeconds} seconds");
+            $instance->setStatus(WorkflowStatus::Waiting->value);
+            $instance->setWaitingUntil((new \DateTimeImmutable())->modify("+{$transition->timeout->afterSeconds} seconds"));
         } else {
-            $instance->status = WorkflowStatus::Active->value;
-            $instance->waitingUntil = null;
-            $instance->awaitingManualAction = false;
+            $instance->setStatus(WorkflowStatus::Active->value);
+            $instance->setWaitingUntil(null);
+            $instance->setAwaitingManualAction(false);
         }
     }
 
@@ -344,20 +344,20 @@ final class WorkflowEngine implements WorkflowEngineInterface
         TransitionResultEnum $result,
         array $guardFailures,
     ): void {
-        $attemptNumber = $this->historyRepo->countAttempts($instance->id, $command->transitionKey) + 1;
+        $attemptNumber = $this->historyRepo->countAttempts($instance->getId(), $command->transitionKey) + 1;
 
         $history = new WorkflowTransitionHistory();
-        $history->workflowInstanceId  = $instance->id;
-        $history->transitionKey       = $command->transitionKey;
-        $history->fromState           = $fromState;
-        $history->toState             = $result->isApplied() ? ($transition?->toState) : null;
-        $history->triggerType         = $command->triggerType->value;
-        $history->triggeredByType     = $command->triggeredByType;
-        $history->triggeredById       = $command->triggeredById;
-        $history->attempt             = $attemptNumber;
-        $history->result              = $result->value;
-        $history->guardFailuresJson   = $guardFailures !== [] ? json_encode($guardFailures, JSON_THROW_ON_ERROR) : null;
-        $history->createdAt           = new \DateTimeImmutable();
+        $history->setWorkflowInstanceId($instance->getId());
+        $history->setTransitionKey($command->transitionKey);
+        $history->setFromState($fromState);
+        $history->setToState($result->isApplied() ? ($transition?->toState) : null);
+        $history->setTriggerType($command->triggerType->value);
+        $history->setTriggeredByType($command->triggeredByType);
+        $history->setTriggeredById($command->triggeredById);
+        $history->setAttempt($attemptNumber);
+        $history->setResult($result->value);
+        $history->setGuardFailuresJson($guardFailures !== [] ? json_encode($guardFailures, JSON_THROW_ON_ERROR) : null);
+        $history->setCreatedAt(new \DateTimeImmutable());
 
         $this->historyRepo->save($history);
     }
@@ -408,41 +408,41 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $definition = $this->registry->get($command->workflowKey);
 
         $this->dispatchEvent(WorkflowTransitionApplied::class, [
-            'instanceId'    => $instance->id,
-            'workflowKey'   => $instance->workflowKey,
+            'instanceId'    => $instance->getId(),
+            'workflowKey'   => $instance->getWorkflowKey(),
             'transitionKey' => $command->transitionKey,
             'fromState'     => $fromState,
-            'toState'       => $instance->currentState,
+            'toState'       => $instance->getCurrentState(),
             'triggerType'   => $command->triggerType->value,
-            'tenantId'      => $instance->tenantId,
+            'tenantId'      => $instance->getTenantId(),
         ]);
 
-        if (in_array($instance->currentState, $definition->terminalStates(), true)) {
+        if (in_array($instance->getCurrentState(), $definition->terminalStates(), true)) {
             $this->dispatchEvent(WorkflowCompleted::class, [
-                'instanceId'  => $instance->id,
-                'workflowKey' => $instance->workflowKey,
-                'subjectType' => $instance->subjectType,
-                'subjectId'   => $instance->subjectId,
-                'finalState'  => $instance->currentState,
-                'tenantId'    => $instance->tenantId,
+                'instanceId'  => $instance->getId(),
+                'workflowKey' => $instance->getWorkflowKey(),
+                'subjectType' => $instance->getSubjectType(),
+                'subjectId'   => $instance->getSubjectId(),
+                'finalState'  => $instance->getCurrentState(),
+                'tenantId'    => $instance->getTenantId(),
             ]);
-        } elseif ($instance->status === WorkflowStatus::Waiting->value) {
+        } elseif ($instance->getStatus() === WorkflowStatus::Waiting->value) {
             $this->dispatchEvent(WorkflowEnteredWaitingState::class, [
-                'instanceId'   => $instance->id,
-                'workflowKey'  => $instance->workflowKey,
-                'currentState' => $instance->currentState,
-                'waitingUntil' => $instance->waitingUntil?->format(\DateTimeInterface::ATOM),
-                'tenantId'     => $instance->tenantId,
+                'instanceId'   => $instance->getId(),
+                'workflowKey'  => $instance->getWorkflowKey(),
+                'currentState' => $instance->getCurrentState(),
+                'waitingUntil' => $instance->getWaitingUntil()?->format(\DateTimeInterface::ATOM),
+                'tenantId'     => $instance->getTenantId(),
             ]);
-        } elseif ($instance->awaitingManualAction) {
+        } elseif ($instance->isAwaitingManualAction()) {
             $this->dispatchEvent(WorkflowManualActionRequired::class, [
-                'instanceId'           => $instance->id,
-                'workflowKey'          => $instance->workflowKey,
-                'subjectType'          => $instance->subjectType,
-                'subjectId'            => $instance->subjectId,
-                'currentState'         => $instance->currentState,
+                'instanceId'           => $instance->getId(),
+                'workflowKey'          => $instance->getWorkflowKey(),
+                'subjectType'          => $instance->getSubjectType(),
+                'subjectId'            => $instance->getSubjectId(),
+                'currentState'         => $instance->getCurrentState(),
                 'pendingTransitionKey' => $transition->key,
-                'tenantId'             => $instance->tenantId,
+                'tenantId'             => $instance->getTenantId(),
             ]);
         }
     }
@@ -458,7 +458,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     private function buildSubjectRef(WorkflowInstance $instance): WorkflowSubjectReferenceInterface
     {
-        return new class ($instance->subjectType, $instance->subjectId, $instance->tenantId) implements WorkflowSubjectReferenceInterface {
+        return new class ($instance->getSubjectType(), $instance->getSubjectId(), $instance->getTenantId()) implements WorkflowSubjectReferenceInterface {
             public function __construct(
                 private readonly string $type,
                 private readonly string $id,
