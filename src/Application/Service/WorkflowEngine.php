@@ -9,6 +9,7 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Event\EventDispatcherInterface;
 use Semitexa\Orm\Application\Service\Transaction\TransactionManager;
+use Semitexa\Orm\Exception\ConstraintViolationException;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowCompleted;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowEnteredWaitingState;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowManualActionRequired;
@@ -89,7 +90,26 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $instance->setCreatedAt(new \DateTimeImmutable());
         $instance->setUpdatedAt(new \DateTimeImmutable());
 
-        $this->instanceRepo->save($instance);
+        try {
+            $this->instanceRepo->save($instance);
+        } catch (ConstraintViolationException $e) {
+            // Two starts for one subject can both pass the lookup above; the
+            // unique index (workflow_key, subject_type, subject_id) lets only
+            // one insert through. The loser gets the same typed answer as a
+            // start that found the instance, not a raw constraint error.
+            if ($this->instanceRepo->findBySubject(
+                $command->workflowKey,
+                $command->subject->workflowSubjectType(),
+                $command->subject->workflowSubjectId(),
+            ) !== null) {
+                throw new WorkflowAlreadyExistsException(
+                    $command->workflowKey,
+                    $command->subject->workflowSubjectType(),
+                    $command->subject->workflowSubjectId(),
+                );
+            }
+            throw $e;
+        }
 
         $this->dispatchEvent(WorkflowStarted::class, [
             'instanceId'   => $instance->getId(),
