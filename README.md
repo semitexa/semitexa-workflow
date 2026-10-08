@@ -2,6 +2,10 @@
 
 Stateful business process orchestration with code-defined state machines, transition guards, and scheduler integration.
 
+## Install
+
+Included in every project created by the installer (https://semitexa.com/install.sh).
+
 ## Purpose
 
 Models business processes as state machines with explicit transitions. Each workflow definition declares states, allowed transitions, guard conditions, and side-effects. History is persisted via ORM and async transitions are delegated to the Scheduler.
