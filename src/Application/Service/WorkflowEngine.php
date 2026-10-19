@@ -8,6 +8,7 @@ use Psr\Container\ContainerInterface;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Event\EventDispatcherInterface;
+use Semitexa\Core\Log\LoggerInterface;
 use Semitexa\Orm\Application\Service\Transaction\TransactionManager;
 use Semitexa\Orm\Exception\ConstraintViolationException;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowCompleted;
@@ -57,6 +58,9 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     #[InjectAsReadonly]
     protected SchedulerInterface $scheduler;
+
+    #[InjectAsReadonly]
+    protected LoggerInterface $logger;
 
     public function start(StartWorkflowCommand $command): WorkflowInstance
     {
@@ -214,6 +218,13 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
         // Run side-effects post-commit (idempotent; failures are logged but do not rollback)
         $sideEffectFailures = $this->runSideEffects($transition, $instance, $command);
+        if ($sideEffectFailures !== [] && isset($this->logger)) {
+            $this->logger->warning("Workflow '{$instance->getWorkflowKey()}' transition '{$command->transitionKey}' was applied, but side effects failed.", [
+                'instanceId' => $instance->getId(),
+                'tenantId'   => $instance->getTenantId(),
+                'failures'   => $sideEffectFailures,
+            ]);
+        }
 
         // Schedule timeout job if transition has a timeout policy
         if ($transition->timeout !== null && isset($this->scheduler)) {
@@ -279,8 +290,17 @@ final class WorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         ApplyTransitionCommand $command,
     ): array {
-        if ($transition->guards === [] || !isset($this->container)) {
+        if ($transition->guards === []) {
             return [];
+        }
+        // A guard is a rule, often "may this user". One that cannot be built
+        // must stop the transition, not be skipped.
+        if (!isset($this->container)) {
+            throw new \LogicException(sprintf(
+                "Transition '%s' is guarded by %s, but the engine has no container to build the guards with.",
+                $transition->key,
+                implode(', ', $transition->guards),
+            ));
         }
 
         // Build a minimal subject reference from the instance
