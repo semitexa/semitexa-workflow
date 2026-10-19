@@ -405,8 +405,17 @@ final class WorkflowEngine implements WorkflowEngineInterface
         WorkflowInstance $instance,
         ApplyTransitionCommand $command,
     ): array {
-        if ($transition->sideEffects === [] || !isset($this->container)) {
+        if ($transition->sideEffects === []) {
             return [];
+        }
+        // Not skipped in silence: the transition is committed, so a side effect
+        // that cannot be built is reported like one that failed.
+        if (!isset($this->container)) {
+            return array_map(static fn (string $class): array => [
+                'sideEffect' => $class,
+                'code'       => 'no_container',
+                'message'    => 'The engine has no container to build this side effect with.',
+            ], $transition->sideEffects);
         }
 
         $subjectRef = $this->buildSubjectRef($instance);

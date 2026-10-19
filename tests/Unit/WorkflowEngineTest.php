@@ -74,7 +74,7 @@ final class WorkflowEngineTest extends TestCase
 
         $result = $engine->apply($this->command($order, 'pay'));
 
-        self::assertSame(['new', 'active'], [$order->getCurrentState(), 'active'], 'started in the initial state');
+        self::assertSame(['new', 'active'], [$order->getCurrentState(), $order->getStatus()], 'started in the initial state, active');
         self::assertSame(TransitionResultEnum::Applied, $result->result);
         self::assertSame(['new', 'paid'], [$result->fromState, $result->toState]);
         $stored = $this->instances->findById($order->getId());
@@ -239,6 +239,25 @@ final class WorkflowEngineTest extends TestCase
         self::assertCount(1, $this->log->warnings);
         self::assertStringContainsString('pay', $this->log->warnings[0][0]);
         self::assertSame([['sideEffect' => EngineReceiptSideEffect::class, 'code' => 'mailer_down', 'message' => 'SMTP refused']], $this->log->warnings[0][1]['failures']);
+    }
+
+    /**
+     * The other half of the guard rule: a side effect that cannot be built is
+     * not silently skipped. The transition is already committed, so it is not
+     * undone — it is reported, as a failing side effect is.
+     */
+    #[Test]
+    public function a_side_effect_that_cannot_be_built_is_reported_not_skipped(): void
+    {
+        $engine = $this->engine(container: false);
+        $order = $engine->start($this->startOrder());
+
+        $result = $engine->apply($this->command($order, 'pay'));
+
+        self::assertSame(TransitionResultEnum::Applied, $result->result);
+        self::assertSame(0, EngineFixtures::$sideEffectRuns);
+        self::assertCount(1, $this->log->warnings);
+        self::assertSame([['sideEffect' => EngineReceiptSideEffect::class, 'code' => 'no_container', 'message' => 'The engine has no container to build this side effect with.']], $this->log->warnings[0][1]['failures']);
     }
 
     /** @param array<string, mixed> $payload */
