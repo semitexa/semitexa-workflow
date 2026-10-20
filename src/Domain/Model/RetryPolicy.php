@@ -16,6 +16,6 @@ final readonly class RetryPolicy
     public function backoffForAttempt(int $attempt): int
     {
         $seconds = (int) ($this->backoffSeconds * ($this->backoffMultiplier ** ($attempt - 1)));
-        return min($seconds, $this->maxBackoffSeconds);
+        return max(0, min($seconds, $this->maxBackoffSeconds));
     }
 }

@@ -225,6 +225,19 @@ final class WorkflowEngine implements WorkflowEngineInterface
                 'failures'   => $sideEffectFailures,
             ]);
         }
+        // A transition with a RetryPolicy gets each failed side effect run again later.
+        if ($transition->retryPolicy !== null && $transition->retryPolicy->maxAttempts > 1) {
+            foreach ($sideEffectFailures as $failure) {
+                $scheduledFollowUp = $this->scheduleSideEffectRetry(
+                    $instance,
+                    $transition,
+                    $failure['sideEffect'],
+                    2,
+                    $transition->retryPolicy->backoffForAttempt(1),
+                    $command->context,
+                ) || $scheduledFollowUp;
+            }
+        }
 
         // Schedule timeout job if transition has a timeout policy
         if ($transition->timeout !== null && isset($this->scheduler)) {
@@ -254,6 +267,56 @@ final class WorkflowEngine implements WorkflowEngineInterface
             toState: $instance->getCurrentState(),
             scheduledFollowUp: $scheduledFollowUp,
         );
+    }
+
+    public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = []): void
+    {
+        $this->assertDependenciesAvailable();
+
+        $definition = $this->registry->get($workflowKey);
+        $instance = $this->instanceRepo->findById($instanceId);
+        if ($instance === null) {
+            $this->log('warning', "Workflow '{$workflowKey}' instance {$instanceId} no longer exists; the retry of {$sideEffectClass} is dropped.", [
+                'transitionKey' => $transitionKey,
+            ]);
+            return;
+        }
+        // The job's payload is read back from storage: only a side effect the
+        // transition declares is run.
+        $transition = null;
+        foreach ($definition->transitions() as $t) {
+            if ($t->key === $transitionKey && in_array($sideEffectClass, $t->sideEffects, true)) {
+                $transition = $t;
+                break;
+            }
+        }
+        if ($transition === null) {
+            $this->log('warning', "Workflow '{$workflowKey}' transition '{$transitionKey}' declares no side effect {$sideEffectClass}; the retry is dropped.", [
+                'instanceId' => $instanceId,
+            ]);
+            return;
+        }
+
+        $failure = isset($this->container)
+            ? $this->runSideEffect($sideEffectClass, $this->buildSubjectRef($instance), $instance, $transition, $context)
+            : ['sideEffect' => $sideEffectClass, 'code' => 'no_container', 'message' => 'The engine has no container to build this side effect with.'];
+        if ($failure === null) {
+            return;
+        }
+
+        $policy = $transition->retryPolicy;
+        if ($policy !== null && $attempt < $policy->maxAttempts
+            && $this->scheduleSideEffectRetry($instance, $transition, $sideEffectClass, $attempt + 1, $policy->backoffForAttempt($attempt), $context)) {
+            return;
+        }
+
+        $this->log('error', "Workflow '{$workflowKey}' transition '{$transitionKey}': side effect {$sideEffectClass} failed {$attempt} times; giving up.", [
+            'instanceId' => $instanceId,
+            'tenantId'   => $instance->getTenantId(),
+            'code'       => $failure['code'],
+            'message'    => $failure['message'],
+            'attempts'   => $attempt,
+        ]);
     }
 
     public function get(string $instanceId): ?WorkflowInstance
@@ -400,6 +463,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $this->historyRepo->save($history);
     }
 
+    /** @return list<array{sideEffect: string, code: string, message: string}> */
     private function runSideEffects(
         TransitionDefinition $transition,
         WorkflowInstance $instance,
@@ -422,27 +486,111 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $failures = [];
 
         foreach ($transition->sideEffects as $sideEffectClass) {
-            try {
-                /** @var WorkflowSideEffectInterface $sideEffect */
-                $sideEffect = $this->container->get($sideEffectClass);
-                $result = $sideEffect->execute($subjectRef, $instance, $transition, $command->context);
-                if (!$result->succeeded) {
-                    $failures[] = [
-                        'sideEffect' => $sideEffectClass,
-                        'code'       => $result->failureCode ?? 'failed',
-                        'message'    => $result->failureMessage ?? '',
-                    ];
-                }
-            } catch (\Throwable $e) {
-                $failures[] = [
-                    'sideEffect' => $sideEffectClass,
-                    'code'       => 'exception',
-                    'message'    => $e->getMessage(),
-                ];
+            $failure = $this->runSideEffect($sideEffectClass, $subjectRef, $instance, $transition, $command->context);
+            if ($failure !== null) {
+                $failures[] = $failure;
             }
         }
 
         return $failures;
+    }
+
+    /**
+     * @param array<mixed> $context
+     * @return array{sideEffect: string, code: string, message: string}|null null when it succeeded
+     */
+    private function runSideEffect(
+        string $sideEffectClass,
+        WorkflowSubjectReferenceInterface $subjectRef,
+        WorkflowInstance $instance,
+        TransitionDefinition $transition,
+        array $context,
+    ): ?array {
+        try {
+            /** @var WorkflowSideEffectInterface $sideEffect */
+            $sideEffect = $this->container->get($sideEffectClass);
+            $result = $sideEffect->execute($subjectRef, $instance, $transition, $context);
+            if ($result->succeeded) {
+                return null;
+            }
+            return [
+                'sideEffect' => $sideEffectClass,
+                'code'       => $result->failureCode ?? 'failed',
+                'message'    => $result->failureMessage ?? '',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'sideEffect' => $sideEffectClass,
+                'code'       => 'exception',
+                'message'    => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Schedules attempt $attempt of one side effect, $delaySeconds from now.
+     * Never throws: the transition is already committed.
+     *
+     * @param array<mixed> $context
+     */
+    private function scheduleSideEffectRetry(
+        WorkflowInstance $instance,
+        TransitionDefinition $transition,
+        string $sideEffectClass,
+        int $attempt,
+        int $delaySeconds,
+        array $context,
+    ): bool {
+        if (!isset($this->scheduler)) {
+            $this->log('warning', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}' has a retry policy, but the engine has no scheduler to retry {$sideEffectClass} with.", [
+                'instanceId' => $instance->getId(),
+            ]);
+            return false;
+        }
+        // The scheduler stores the payload as JSON; a context that is not JSON
+        // is left out rather than failing a transition already committed, and
+        // one JSON changes (a date becomes an array, an enum its value) is said.
+        try {
+            $stored = json_decode(json_encode($context, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+            if ($stored !== $context) {
+                $this->log('warning', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}': the context changes when stored as JSON; the retry of {$sideEffectClass} gets the stored form.", [
+                    'instanceId' => $instance->getId(),
+                ]);
+            }
+            // The stored form, whatever the scheduler: the retry gets exactly this.
+            $context = is_array($stored) ? $stored : [];
+        } catch (\JsonException $e) {
+            $this->log('warning', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}': the context cannot be stored as JSON; the retry of {$sideEffectClass} runs without it.", [
+                'instanceId' => $instance->getId(),
+                'message'    => $e->getMessage(),
+            ]);
+            $context = [];
+        }
+        try {
+            $this->scheduler->dispatchAt(
+                jobClass: WorkflowSideEffectRetryJob::class,
+                runAt: (new \DateTimeImmutable())->modify("+{$delaySeconds} seconds"),
+                payload: [
+                    'workflowKey'   => $instance->getWorkflowKey(),
+                    'instanceId'    => $instance->getId(),
+                    'transitionKey' => $transition->key,
+                    'sideEffect'    => $sideEffectClass,
+                    'attempt'       => $attempt,
+                    'context'       => $context,
+                ],
+                tenantId: $instance->getTenantId(),
+                // Unique per scheduled retry: a lock key only guards one run, and
+                // a cyclic workflow can owe the same retry twice at once.
+                lockKey: 'workflow_side_effect_' . $instance->getId() . '_' . substr(sha1($transition->key . '|' . $sideEffectClass . '|' . $attempt), 0, 12) . bin2hex(random_bytes(4)),
+            );
+        } catch (\Throwable $e) {
+            $this->log('error', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}': the retry of {$sideEffectClass} could not be scheduled.", [
+                'instanceId' => $instance->getId(),
+                'message'    => $e->getMessage(),
+            ]);
+            return false;
+        }
+        return true;
     }
 
     private function emitTransitionEvents(
@@ -491,6 +639,17 @@ final class WorkflowEngine implements WorkflowEngineInterface
                 'pendingTransitionKey' => $transition->key,
                 'tenantId'             => $instance->getTenantId(),
             ]);
+        }
+    }
+
+    /**
+     * @param 'warning'|'error' $level
+     * @param array<string, mixed> $context
+     */
+    private function log(string $level, string $message, array $context): void
+    {
+        if (isset($this->logger)) {
+            $this->logger->{$level}($message, $context);
         }
     }
 

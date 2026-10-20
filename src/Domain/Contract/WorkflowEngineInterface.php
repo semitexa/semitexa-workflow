@@ -32,6 +32,18 @@ interface WorkflowEngineInterface
     public function apply(ApplyTransitionCommand $command): WorkflowTransitionResult;
 
     /**
+     * Run one side effect of an applied transition again, as its RetryPolicy
+     * scheduled it: on failure the next attempt is scheduled with the policy's
+     * backoff, and after maxAttempts attempts in all the engine gives up and
+     * logs an error. A class the transition does not declare is not run.
+     * The side effect sees the instance as it is now, and the context as it
+     * was stored: JSON, so a date or an enum comes back as an array or a value.
+     *
+     * @param array<string, mixed> $context the command context the transition ran with
+     */
+    public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = []): void;
+
+    /**
      * Load a workflow instance by ID.
      */
     public function get(string $instanceId): ?WorkflowInstance;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Workflow\Application\Service;
 
+use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Scheduler\Domain\Contract\ScheduledJobInterface;
 use Semitexa\Scheduler\Domain\Model\ScheduledJobContext;
@@ -19,7 +20,11 @@ use Semitexa\Workflow\Domain\Enum\WorkflowStatus;
  * The job is idempotent: if the instance has already moved past the
  * expected state, the transition will be rejected as invalid and
  * the job completes without error.
+ *
+ * A service: the scheduler builds the job from its class name through the
+ * container, which builds registered services only.
  */
+#[AsService]
 final class WorkflowTimeoutJob implements ScheduledJobInterface
 {
     #[InjectAsReadonly]

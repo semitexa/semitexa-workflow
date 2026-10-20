@@ -19,6 +19,7 @@ use Semitexa\Workflow\Application\Payload\Event\WorkflowTransitionApplied;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowTransitionRejected;
 use Semitexa\Workflow\Application\Service\WorkflowDefinitionRegistry;
 use Semitexa\Workflow\Application\Service\WorkflowEngine;
+use Semitexa\Workflow\Application\Service\WorkflowSideEffectRetryJob;
 use Semitexa\Workflow\Application\Service\WorkflowTimeoutJob;
 use Semitexa\Workflow\Domain\Command\ApplyTransitionCommand;
 use Semitexa\Workflow\Domain\Command\StartWorkflowCommand;
@@ -31,6 +32,7 @@ use Semitexa\Workflow\Domain\Contract\WorkflowTransitionHistoryRepositoryInterfa
 use Semitexa\Workflow\Domain\Enum\TransitionResultEnum;
 use Semitexa\Workflow\Domain\Enum\TriggerType;
 use Semitexa\Workflow\Domain\Model\GuardResult;
+use Semitexa\Workflow\Domain\Model\RetryPolicy;
 use Semitexa\Workflow\Domain\Model\SideEffectResult;
 use Semitexa\Workflow\Domain\Model\TimeoutPolicy;
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
@@ -64,6 +66,8 @@ final class WorkflowEngineTest extends TestCase
         $this->log = new EngineLog();
         EngineFixtures::$approved = true;
         EngineFixtures::$sideEffectRuns = 0;
+        EngineFixtures::$flakyFailuresLeft = 0;
+        EngineFixtures::$flakyRuns = 0;
     }
 
     #[Test]
@@ -260,6 +264,156 @@ final class WorkflowEngineTest extends TestCase
         self::assertSame([['sideEffect' => EngineReceiptSideEffect::class, 'code' => 'no_container', 'message' => 'The engine has no container to build this side effect with.']], $this->log->warnings[0][1]['failures']);
     }
 
+    /**
+     * REGRESSION (tk-workflow-retry-policy-applied). A transition's RetryPolicy
+     * was accepted and never read: a failing side effect ran once, whatever the
+     * policy said. It is now retried through the scheduler, each wait the
+     * policy's backoff (doubling here, capped at 45 s), and given up after
+     * maxAttempts attempts in all, the first one included.
+     */
+    #[Test]
+    public function a_failing_side_effect_is_retried_as_its_retry_policy_says_then_given_up(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+
+        $result = $engine->apply($this->command($order, 'pay_retried', ['note' => 'gift']));
+
+        self::assertTrue($result->scheduledFollowUp, 'a retry is scheduled');
+        self::assertSame(1, EngineFixtures::$sideEffectRuns);
+        self::assertEqualsWithDelta(30, $this->retryDelay(0), 1, 'first wait: backoffSeconds');
+        self::assertSame([
+            'workflowKey' => 'order',
+            'instanceId' => $order->getId(),
+            'transitionKey' => 'pay_retried',
+            'sideEffect' => EngineReceiptSideEffect::class,
+            'attempt' => 2,
+            'context' => ['note' => 'gift'],
+        ], $this->scheduler->jobs[0]['payload']);
+
+        $this->runRetryJob($engine, $this->scheduler->jobs[0]['payload']);
+        self::assertSame(2, EngineFixtures::$sideEffectRuns);
+        self::assertCount(2, $this->scheduler->jobs);
+        self::assertEqualsWithDelta(45, $this->retryDelay(1), 1, 'second wait: 30 x 2 = 60, capped at maxBackoffSeconds');
+        self::assertSame(3, $this->scheduler->jobs[1]['payload']['attempt']);
+
+        $this->runRetryJob($engine, $this->scheduler->jobs[1]['payload']);
+        self::assertSame(3, EngineFixtures::$sideEffectRuns, 'maxAttempts: 3 runs in all');
+        self::assertCount(2, $this->scheduler->jobs, 'no fourth attempt');
+        self::assertCount(1, $this->log->errors);
+        self::assertSame("Workflow 'order' transition 'pay_retried': side effect " . EngineReceiptSideEffect::class . ' failed 3 times; giving up.', $this->log->errors[0][0]);
+        self::assertSame(['code' => 'mailer_down', 'message' => 'SMTP refused'], array_intersect_key($this->log->errors[0][1], ['code' => 1, 'message' => 1]));
+    }
+
+    #[Test]
+    public function a_side_effect_that_succeeds_on_a_retry_is_not_retried_again(): void
+    {
+        EngineFixtures::$flakyFailuresLeft = 1;
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $engine->apply($this->command($order, 'pay_flaky'));
+        self::assertCount(1, $this->scheduler->jobs);
+
+        $this->runRetryJob($engine, $this->scheduler->jobs[0]['payload']);
+
+        self::assertSame(2, EngineFixtures::$flakyRuns, 'inline once, failing; the retry once, succeeding');
+        self::assertCount(1, $this->scheduler->jobs, 'nothing more scheduled');
+        self::assertSame([], $this->log->errors);
+    }
+
+    #[Test]
+    public function without_a_retry_policy_a_failing_side_effect_runs_once(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+
+        $result = $engine->apply($this->command($order, 'pay'));
+
+        self::assertFalse($result->scheduledFollowUp);
+        self::assertSame([], $this->scheduler->jobs);
+    }
+
+    /** The job's payload is read back from storage: it reruns only a side effect that transition declares. */
+    #[Test]
+    public function a_retry_naming_a_class_the_transition_does_not_declare_runs_nothing(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $engine->apply($this->command($order, 'pay_retried'));
+        $payload = ['sideEffect' => EngineFlakySideEffect::class] + $this->scheduler->jobs[0]['payload'];
+
+        $this->runRetryJob($engine, $payload);
+
+        self::assertSame(1, EngineFixtures::$sideEffectRuns);
+        self::assertSame(0, EngineFixtures::$flakyRuns);
+        self::assertCount(1, $this->scheduler->jobs);
+    }
+
+    /** A context that cannot be stored as JSON is left out of the retry instead of breaking a committed transition. */
+    #[Test]
+    public function a_context_that_is_not_json_does_not_break_the_transition(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+
+        $result = $engine->apply($this->command($order, 'pay_retried', ['stream' => fopen('php://memory', 'r')]));
+
+        self::assertSame(TransitionResultEnum::Applied, $result->result);
+        self::assertSame([], $this->scheduler->jobs[0]['payload']['context']);
+        self::assertStringContainsString('the context cannot be stored as JSON', $this->log->warnings[1][0]);
+    }
+
+    #[Test]
+    public function a_context_json_would_change_is_stored_with_a_warning(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+
+        $engine->apply($this->command($order, 'pay_retried', ['at' => new \DateTimeImmutable('2026-10-20 10:00:00')]));
+
+        self::assertSame(
+            ['at' => ['date' => '2026-10-20 10:00:00.000000', 'timezone_type' => 3, 'timezone' => date_default_timezone_get()]],
+            $this->scheduler->jobs[0]['payload']['context'],
+            'what the retry will get',
+        );
+        self::assertStringContainsString('the context changes when stored as JSON', $this->log->warnings[1][0]);
+    }
+
+    #[Test]
+    public function a_retry_for_an_instance_that_is_gone_is_dropped_and_said(): void
+    {
+        $engine = $this->engine();
+
+        $engine->retrySideEffect('order', 'gone', 'pay_retried', EngineReceiptSideEffect::class, 2);
+
+        self::assertSame(0, EngineFixtures::$sideEffectRuns);
+        self::assertStringContainsString('instance gone no longer exists', $this->log->warnings[0][0]);
+    }
+
+    #[Test]
+    public function a_backoff_is_never_negative(): void
+    {
+        self::assertSame(0, (new RetryPolicy(backoffSeconds: -60))->backoffForAttempt(1));
+        self::assertSame(10, (new RetryPolicy(backoffSeconds: 10, backoffMultiplier: 3.0, maxBackoffSeconds: 100))->backoffForAttempt(1));
+        self::assertSame(90, (new RetryPolicy(backoffSeconds: 10, backoffMultiplier: 3.0, maxBackoffSeconds: 100))->backoffForAttempt(3));
+        self::assertSame(100, (new RetryPolicy(backoffSeconds: 10, backoffMultiplier: 3.0, maxBackoffSeconds: 100))->backoffForAttempt(4));
+    }
+
+    private function retryDelay(int $job): int
+    {
+        self::assertSame(WorkflowSideEffectRetryJob::class, $this->scheduler->jobs[$job]['jobClass']);
+
+        return $this->scheduler->jobs[$job]['runAt']->getTimestamp() - time();
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function runRetryJob(WorkflowEngine $engine, array $payload): void
+    {
+        $job = new WorkflowSideEffectRetryJob();
+        (new \ReflectionProperty(WorkflowSideEffectRetryJob::class, 'engine'))->setValue($job, $engine);
+        $job->handle(new ScheduledJobContext(runId: 'run-r', jobClass: WorkflowSideEffectRetryJob::class, pool: 'default', payload: $payload));
+    }
+
     /** @param array<string, mixed> $payload */
     private function runTimeoutJob(WorkflowEngine $engine, array $payload): void
     {
@@ -302,9 +456,10 @@ final class WorkflowEngineTest extends TestCase
         });
     }
 
-    private function command(WorkflowInstance $instance, string $transition): ApplyTransitionCommand
+    /** @param array<string, mixed> $context */
+    private function command(WorkflowInstance $instance, string $transition, array $context = []): ApplyTransitionCommand
     {
-        return new ApplyTransitionCommand('order', $instance->getId(), $transition, TriggerType::Manual, 'user', 'u-1');
+        return new ApplyTransitionCommand('order', $instance->getId(), $transition, TriggerType::Manual, 'user', 'u-1', $context);
     }
 }
 
@@ -325,6 +480,8 @@ final class EngineOrderWorkflow implements WorkflowDefinitionInterface
             new TransitionDefinition('accept', ['quoted'], 'paid'),
             new TransitionDefinition('expire', ['quoted'], 'expired', triggerType: TriggerType::Scheduled),
             new TransitionDefinition('flag', ['new'], 'review', requiresManualApproval: true),
+            new TransitionDefinition('pay_retried', ['new'], 'paid', sideEffects: [EngineReceiptSideEffect::class], retryPolicy: new RetryPolicy(maxAttempts: 3, backoffSeconds: 30, backoffMultiplier: 2.0, maxBackoffSeconds: 45)),
+            new TransitionDefinition('pay_flaky', ['new'], 'paid', sideEffects: [EngineFlakySideEffect::class], retryPolicy: new RetryPolicy(maxAttempts: 3, backoffSeconds: 30)),
         ];
     }
 }
@@ -334,6 +491,27 @@ final class EngineFixtures
     public static bool $approved = true;
 
     public static int $sideEffectRuns = 0;
+
+    public static int $flakyFailuresLeft = 0;
+
+    public static int $flakyRuns = 0;
+}
+
+/** Fails as many times as $flakyFailuresLeft says, then succeeds. */
+final class EngineFlakySideEffect implements WorkflowSideEffectInterface
+{
+    /** @param array<string, mixed> $context */
+    public function execute(WorkflowSubjectReferenceInterface $subject, WorkflowInstance $instance, TransitionDefinition $transition, array $context): SideEffectResult
+    {
+        EngineFixtures::$flakyRuns++;
+        if (EngineFixtures::$flakyFailuresLeft > 0) {
+            EngineFixtures::$flakyFailuresLeft--;
+
+            return SideEffectResult::failure('busy', 'Try later');
+        }
+
+        return SideEffectResult::success();
+    }
 }
 
 final class EngineApprovalGuard implements WorkflowGuardInterface
@@ -511,7 +689,10 @@ final class EngineLog implements LoggerInterface
     /** @var list<array{string, array<string, mixed>}> */
     public array $warnings = [];
 
-    public function error(string $message, array $context = []): void {}
+    /** @var list<array{string, array<string, mixed>}> */
+    public array $errors = [];
+
+    public function error(string $message, array $context = []): void { $this->errors[] = [$message, $context]; }
     public function critical(string $message, array $context = []): void {}
     public function warning(string $message, array $context = []): void { $this->warnings[] = [$message, $context]; }
     public function info(string $message, array $context = []): void {}
