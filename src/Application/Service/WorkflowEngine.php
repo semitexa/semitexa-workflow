@@ -29,6 +29,7 @@ use Semitexa\Workflow\Domain\Exception\WorkflowAlreadyExistsException;
 use Semitexa\Workflow\Domain\Exception\WorkflowInstanceNotFoundException;
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
+use Semitexa\Workflow\Domain\Model\WorkflowSubjectRef;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionResult;
 use Semitexa\Workflow\Domain\Enum\TransitionResultEnum;
@@ -226,18 +227,16 @@ final class WorkflowEngine implements WorkflowEngineInterface
                 'failures'   => $sideEffectFailures,
             ]);
         }
-        // A transition with a RetryPolicy gets each failed side effect run again later.
-        if ($transition->retryPolicy !== null && $transition->retryPolicy->maxAttempts > 1) {
-            foreach ($sideEffectFailures as $failure) {
-                $scheduledFollowUp = $this->scheduleSideEffectRetry(
-                    $instance,
-                    $transition,
-                    $failure['sideEffect'],
-                    2,
-                    $transition->retryPolicy->backoffForAttempt(1),
-                    $command->context,
-                ) || $scheduledFollowUp;
+        // Run again later as the RetryPolicy says, or given up after the transition's events.
+        $givenUp = [];
+        foreach ($sideEffectFailures as $failure) {
+            if (($policy = $transition->retryPolicy) !== null && $policy->maxAttempts > 1
+                && $this->scheduleSideEffectRetry($instance, $transition, $failure['sideEffect'], 2, $policy->backoffForAttempt(1), $command->context)) {
+                $scheduledFollowUp = true;
+                continue;
             }
+            $givenUp[] = $failure;
+            $this->failures()->log($instance, $command->transitionKey, $failure, 1);
         }
 
         // Schedule timeout job if transition has a timeout policy
@@ -261,6 +260,9 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
         // Emit post-commit domain events
         $this->emitTransitionEvents($instance, $transition, $command, $fromState, $sideEffectFailures);
+        foreach ($givenUp as $failure) {
+            $this->failures()->dispatch($instance, $command->transitionKey, $failure);
+        }
 
         return WorkflowTransitionResult::applied(
             instanceId: $instance->getId(),
@@ -300,7 +302,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
 
         $failure = isset($this->container)
-            ? $this->runSideEffect($sideEffectClass, $this->buildSubjectRef($instance), $instance, $transition, $context)
+            ? $this->runSideEffect($sideEffectClass, WorkflowSubjectRef::of($instance), $instance, $transition, $context)
             : ['sideEffect' => $sideEffectClass, 'code' => 'no_container', 'message' => 'The engine has no container to build this side effect with.'];
         if ($failure === null) {
             return;
@@ -312,13 +314,13 @@ final class WorkflowEngine implements WorkflowEngineInterface
             return;
         }
 
-        $this->log('error', "Workflow '{$workflowKey}' transition '{$transitionKey}': side effect {$sideEffectClass} failed {$attempt} times; giving up.", [
-            'instanceId' => $instanceId,
-            'tenantId'   => $instance->getTenantId(),
-            'code'       => $failure['code'],
-            'message'    => $failure['message'],
-            'attempts'   => $attempt,
-        ]);
+        $this->failures()->log($instance, $transitionKey, $failure, $attempt);
+        $this->failures()->dispatch($instance, $transitionKey, $failure);
+    }
+
+    private function failures(): WorkflowFailureReporter
+    {
+        return new WorkflowFailureReporter($this->logger ?? null, $this->eventDispatcher ?? null);
     }
 
     public function get(string $instanceId): ?WorkflowInstance
@@ -370,7 +372,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
 
         // Build a minimal subject reference from the instance
-        $subjectRef = $this->buildSubjectRef($instance);
+        $subjectRef = WorkflowSubjectRef::of($instance);
 
         $failures = [];
         foreach ($transition->guards as $guardClass) {
@@ -490,7 +492,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
             ], $transition->sideEffects);
         }
 
-        $subjectRef = $this->buildSubjectRef($instance);
+        $subjectRef = WorkflowSubjectRef::of($instance);
         $failures = [];
 
         foreach ($transition->sideEffects as $sideEffectClass) {
@@ -668,21 +670,6 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
         $event = $this->eventDispatcher->create($eventClass, $data);
         $this->eventDispatcher->dispatch($event);
-    }
-
-    private function buildSubjectRef(WorkflowInstance $instance): WorkflowSubjectReferenceInterface
-    {
-        return new class ($instance->getSubjectType(), $instance->getSubjectId(), $instance->getTenantId()) implements WorkflowSubjectReferenceInterface {
-            public function __construct(
-                private readonly string $type,
-                private readonly string $id,
-                private readonly ?string $tenant,
-            ) {}
-
-            public function workflowSubjectType(): string { return $this->type; }
-            public function workflowSubjectId(): string { return $this->id; }
-            public function workflowTenantId(): ?string { return $this->tenant; }
-        };
     }
 
     /** '' is no tenant, as null is: otherwise a start with '' missed an instance started with null. */
