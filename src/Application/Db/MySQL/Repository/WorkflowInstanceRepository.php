@@ -159,7 +159,7 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
         // The connection of the transaction in progress, when there is one:
         // getAdapter() takes its own pooled connection and autocommits, so the
         // state write escaped the engine's transaction.
-        return $this->orm()->getTransactionManager()->currentAdapter() ?? $this->orm()->getAdapter();
+        return $this->orm()->getQueryAdapter();
     }
 
     private function copyIntoMutableDomain(object $source, WorkflowInstance $target): void
