@@ -72,6 +72,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
             $command->workflowKey,
             $command->subject->workflowSubjectType(),
             $command->subject->workflowSubjectId(),
+            self::tenantOf($command->subject),
         );
         if ($existing !== null) {
             throw new WorkflowAlreadyExistsException(
@@ -85,7 +86,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $instance->setWorkflowKey($command->workflowKey);
         $instance->setSubjectType($command->subject->workflowSubjectType());
         $instance->setSubjectId($command->subject->workflowSubjectId());
-        $instance->setTenantId($command->subject->workflowTenantId());
+        $instance->setTenantId(self::tenantOf($command->subject));
         $instance->setCurrentState($definition->initialState());
         $instance->setStatus(WorkflowStatus::Active->value);
         $instance->setVersion(0);
@@ -99,20 +100,14 @@ final class WorkflowEngine implements WorkflowEngineInterface
         } catch (ConstraintViolationException $e) {
             // Two starts for one subject can both pass the lookup above; the
             // unique index (workflow_key, subject_type, subject_id) lets only
-            // one insert through. The loser gets the same typed answer as a
-            // start that found the instance, not a raw constraint error.
-            if ($this->instanceRepo->findBySubject(
-                $command->workflowKey,
-                $command->subject->workflowSubjectType(),
-                $command->subject->workflowSubjectId(),
-            ) !== null) {
-                throw new WorkflowAlreadyExistsException(
-                    $command->workflowKey,
-                    $command->subject->workflowSubjectType(),
-                    $command->subject->workflowSubjectId(),
-                );
+            // one insert through. It has no tenant_id, so a subject id another
+            // tenant holds lands here too, past the tenant-filtered lookup.
+            // Any other violation is not disguised.
+            $exists = $this->instanceRepo->findBySubject($command->workflowKey, $command->subject->workflowSubjectType(), $command->subject->workflowSubjectId(), self::tenantOf($command->subject)) !== null;
+            if (!$exists && !str_contains($e->getMessage(), 'uniq_workflow_instance_subject')) {
+                throw $e;
             }
-            throw $e;
+            throw new WorkflowAlreadyExistsException($command->workflowKey, $command->subject->workflowSubjectType(), $command->subject->workflowSubjectId());
         }
 
         $this->dispatchEvent(WorkflowStarted::class, [
@@ -136,6 +131,12 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $instance = $this->instanceRepo->findById($command->instanceId);
         if ($instance === null) {
             throw new WorkflowInstanceNotFoundException($command->instanceId);
+        }
+
+        // Another workflow's rules must never apply to this instance (a shared `approve` from `pending`).
+        if ($instance->getWorkflowKey() !== $command->workflowKey) {
+            $message = "Instance {$instance->getId()} belongs to workflow '{$instance->getWorkflowKey()}', not '{$command->workflowKey}'.";
+            return WorkflowTransitionResult::rejectedInvalid($instance->getId(), $command->transitionKey, $instance->getCurrentState(), 'workflow_mismatch', $message);
         }
 
         // Reject if already in a terminal state
@@ -249,6 +250,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
                     'workflowKey'   => $instance->getWorkflowKey(),
                     'instanceId'    => $instance->getId(),
                     'transitionKey' => $transition->timeout->transitionKey,
+                    'stateVersion'  => $instance->getVersion(), // a later visit has its own timer
                 ],
                 pool: $transition->timeout->pool,
                 tenantId: $instance->getTenantId(),
@@ -334,6 +336,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
             $workflowKey,
             $subject->workflowSubjectType(),
             $subject->workflowSubjectId(),
+            self::tenantOf($subject),
         );
     }
 
@@ -413,6 +416,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         } elseif ($transition->timeout !== null) {
             $instance->setStatus(WorkflowStatus::Waiting->value);
             $instance->setWaitingUntil((new \DateTimeImmutable())->modify("+{$transition->timeout->afterSeconds} seconds"));
+            $instance->setAwaitingManualAction(false);
         } else {
             $instance->setStatus(WorkflowStatus::Active->value);
             $instance->setWaitingUntil(null);
@@ -428,13 +432,17 @@ final class WorkflowEngine implements WorkflowEngineInterface
         TransitionDefinition $transition,
         array $guardFailures,
     ): bool {
-        $committed = $this->instanceRepo->saveWithVersionCheck($instance, $expectedVersion);
+        // One transaction: a failed history insert left the state moved with nothing after it.
+        $commit = function () use ($instance, $expectedVersion, $fromState, $command, $transition, $guardFailures): bool {
+            $committed = $this->instanceRepo->saveWithVersionCheck($instance, $expectedVersion);
+            if ($committed) {
+                $this->recordHistory($instance, $fromState, $command, $transition, TransitionResultEnum::Applied, $guardFailures);
+            }
 
-        if ($committed) {
-            $this->recordHistory($instance, $fromState, $command, $transition, TransitionResultEnum::Applied, $guardFailures);
-        }
+            return $committed;
+        };
 
-        return $committed;
+        return isset($this->transactionManager) ? (bool) $this->transactionManager->run($commit) : $commit();
     }
 
     private function recordHistory(
@@ -675,5 +683,13 @@ final class WorkflowEngine implements WorkflowEngineInterface
             public function workflowSubjectId(): string { return $this->id; }
             public function workflowTenantId(): ?string { return $this->tenant; }
         };
+    }
+
+    /** '' is no tenant, as null is: otherwise a start with '' missed an instance started with null. */
+    private static function tenantOf(WorkflowSubjectReferenceInterface $subject): ?string
+    {
+        $tenant = $subject->workflowTenantId();
+
+        return $tenant === '' ? null : $tenant;
     }
 }

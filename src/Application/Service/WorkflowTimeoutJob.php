@@ -55,6 +55,14 @@ final class WorkflowTimeoutJob implements ScheduledJobInterface
             return;
         }
 
+        // A timer belongs to the visit that scheduled it. Leaving the state and
+        // coming back started a new visit with its own timer; this older one
+        // would have ended the new visit early.
+        $stateVersion = $context->payload['stateVersion'] ?? null;
+        if (is_int($stateVersion) && $instance->getVersion() !== $stateVersion) {
+            return;
+        }
+
         $this->engine->apply(new ApplyTransitionCommand(
             workflowKey:    $workflowKey,
             instanceId:     $instanceId,

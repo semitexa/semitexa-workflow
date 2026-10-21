@@ -74,7 +74,10 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
 
     private function adapter(): \Semitexa\Orm\Adapter\DatabaseAdapterInterface
     {
-        return $this->orm()->getAdapter();
+        // The connection of the transaction in progress, when there is one:
+        // getAdapter() takes its own pooled connection and autocommits, so the
+        // state write escaped the engine's transaction.
+        return $this->orm()->getTransactionManager()->currentAdapter() ?? $this->orm()->getAdapter();
     }
 
     private function copyIntoMutableDomain(object $source, WorkflowTransitionHistory $target): void

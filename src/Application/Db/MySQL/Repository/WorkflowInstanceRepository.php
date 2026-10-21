@@ -31,14 +31,21 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
         return $this->system()->findById($id);
     }
 
-    public function findBySubject(string $workflowKey, string $subjectType, string $subjectId): ?WorkflowInstance
+    public function findBySubject(string $workflowKey, string $subjectType, string $subjectId, ?string $tenantId): ?WorkflowInstance
     {
-        /** @var WorkflowInstance|null */
-        return $this->system()->query()
+        // Filtered by the subject's tenant: the system scope answered with
+        // whichever tenant's instance held the subject id, so tenant B looking
+        // up its own order:42 read tenant A's workflow.
+        $query = $this->system()->query()
             ->where(WorkflowInstanceResourceModel::column('workflowKey'), Operator::Equals, $workflowKey)
             ->where(WorkflowInstanceResourceModel::column('subjectType'), Operator::Equals, $subjectType)
-            ->where(WorkflowInstanceResourceModel::column('subjectId'), Operator::Equals, $subjectId)
-            ->fetchOneAs(WorkflowInstance::class, $this->orm()->getMapperRegistry());
+            ->where(WorkflowInstanceResourceModel::column('subjectId'), Operator::Equals, $subjectId);
+        $tenantId === null
+            ? $query->whereNull(WorkflowInstanceResourceModel::column('tenantId'))
+            : $query->where(WorkflowInstanceResourceModel::column('tenantId'), Operator::Equals, $tenantId);
+
+        /** @var WorkflowInstance|null */
+        return $query->fetchOneAs(WorkflowInstance::class, $this->orm()->getMapperRegistry());
     }
 
     public function findOverdueWaiting(\DateTimeImmutable $now, int $limit = 50): array
@@ -149,7 +156,10 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
 
     private function adapter(): \Semitexa\Orm\Adapter\DatabaseAdapterInterface
     {
-        return $this->orm()->getAdapter();
+        // The connection of the transaction in progress, when there is one:
+        // getAdapter() takes its own pooled connection and autocommits, so the
+        // state write escaped the engine's transaction.
+        return $this->orm()->getTransactionManager()->currentAdapter() ?? $this->orm()->getAdapter();
     }
 
     private function copyIntoMutableDomain(object $source, WorkflowInstance $target): void

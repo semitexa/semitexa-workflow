@@ -59,7 +59,7 @@ final class WorkflowStartRaceTest extends TestCase
             private int $lookups = 0;
             public function __construct(private bool $winnerExists) {}
             public function findById(string $id): ?WorkflowInstance { return null; }
-            public function findBySubject(string $workflowKey, string $subjectType, string $subjectId): ?WorkflowInstance
+            public function findBySubject(string $workflowKey, string $subjectType, string $subjectId, ?string $tenantId = null): ?WorkflowInstance
             {
                 return ++$this->lookups > 1 && $this->winnerExists ? new WorkflowInstance() : null;
             }

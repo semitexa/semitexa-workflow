@@ -10,7 +10,8 @@ interface WorkflowInstanceRepositoryInterface
 {
     public function findById(string $id): ?WorkflowInstance;
 
-    public function findBySubject(string $workflowKey, string $subjectType, string $subjectId): ?WorkflowInstance;
+    /** The subject's instance in its own tenant (null tenant: the instances that have none). */
+    public function findBySubject(string $workflowKey, string $subjectType, string $subjectId, ?string $tenantId): ?WorkflowInstance;
 
     /**
      * Find instances that are in a waiting state and past their waiting_until deadline.

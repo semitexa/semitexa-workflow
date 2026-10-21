@@ -407,6 +407,54 @@ final class WorkflowEngineTest extends TestCase
     }
 
     /** @param array<string, mixed> $payload */
+    #[Test]
+    public function a_command_for_another_workflow_does_not_apply_its_rules_to_this_instance(): void
+    {
+        // Both workflows have `pay` from `new`: the quote's rules were applied
+        // to the order, its own definition never consulted.
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+
+        $result = $engine->apply(new ApplyTransitionCommand('quote', $order->getId(), 'pay', TriggerType::Manual, 'user', 'u-1'));
+
+        self::assertSame('workflow_mismatch', $result->failureCode);
+        self::assertSame('new', $engine->get($order->getId())?->getCurrentState());
+    }
+
+    #[Test]
+    public function a_timer_from_an_earlier_visit_does_not_end_the_next_one(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $engine->apply($this->command($order, 'send_quote'));
+        $firstTimer = $this->scheduler->jobs[0]['payload'];
+        $engine->apply($this->command($order, 'accept'));
+        $engine->apply($this->command($order, 'refund'));
+        $engine->apply($this->command($order, 'send_quote'));
+        $secondTimer = end($this->scheduler->jobs)['payload'];
+
+        $this->runTimeoutJob($engine, $firstTimer);
+        self::assertSame('quoted', $engine->get($order->getId())?->getCurrentState(), 'the first visit\'s timer expired the second visit');
+
+        $this->runTimeoutJob($engine, $secondTimer);
+        self::assertSame('expired', $engine->get($order->getId())?->getCurrentState());
+    }
+
+    #[Test]
+    public function a_subject_is_looked_up_in_its_own_tenant(): void
+    {
+        $engine = $this->engine();
+        $engine->start($this->startOrder());
+
+        $sameIdOtherTenant = new class implements WorkflowSubjectReferenceInterface {
+            public function workflowSubjectType(): string { return 'order'; }
+            public function workflowSubjectId(): string { return 'order-1'; }
+            public function workflowTenantId(): ?string { return 't-2'; }
+        };
+
+        self::assertNull($engine->findBySubject('order', $sameIdOtherTenant), "tenant t-2 read tenant t-1's workflow");
+    }
+
     private function runRetryJob(WorkflowEngine $engine, array $payload): void
     {
         $job = new WorkflowSideEffectRetryJob();
@@ -425,7 +473,7 @@ final class WorkflowEngineTest extends TestCase
     private function engine(bool $container = true): WorkflowEngine
     {
         $registry = (new \ReflectionClass(WorkflowDefinitionRegistry::class))->newInstanceWithoutConstructor();
-        (new \ReflectionProperty($registry, 'definitions'))->setValue($registry, ['order' => new EngineOrderWorkflow()]);
+        (new \ReflectionProperty($registry, 'definitions'))->setValue($registry, ['order' => new EngineOrderWorkflow(), 'quote' => new EngineQuoteWorkflow()]);
         (new \ReflectionProperty($registry, 'initialized'))->setValue($registry, true);
 
         $engine = (new \ReflectionClass(WorkflowEngine::class))->newInstanceWithoutConstructor();
@@ -483,6 +531,19 @@ final class EngineOrderWorkflow implements WorkflowDefinitionInterface
             new TransitionDefinition('pay_retried', ['new'], 'paid', sideEffects: [EngineReceiptSideEffect::class], retryPolicy: new RetryPolicy(maxAttempts: 3, backoffSeconds: 30, backoffMultiplier: 2.0, maxBackoffSeconds: 45)),
             new TransitionDefinition('pay_flaky', ['new'], 'paid', sideEffects: [EngineFlakySideEffect::class], retryPolicy: new RetryPolicy(maxAttempts: 3, backoffSeconds: 30)),
         ];
+    }
+}
+
+final class EngineQuoteWorkflow implements WorkflowDefinitionInterface
+{
+    public static function key(): string { return 'quote'; }
+    public function initialState(): string { return 'new'; }
+    public function states(): array { return ['new', 'paid']; }
+    public function terminalStates(): array { return ['paid']; }
+
+    public function transitions(): array
+    {
+        return [new TransitionDefinition('pay', ['new'], 'paid')];
     }
 }
 
@@ -566,10 +627,10 @@ final class EngineInstances implements WorkflowInstanceRepositoryInterface
         return isset($this->rows[$id]) ? clone $this->rows[$id] : null;
     }
 
-    public function findBySubject(string $workflowKey, string $subjectType, string $subjectId): ?WorkflowInstance
+    public function findBySubject(string $workflowKey, string $subjectType, string $subjectId, ?string $tenantId = null): ?WorkflowInstance
     {
         foreach ($this->rows as $row) {
-            if ([$row->getWorkflowKey(), $row->getSubjectType(), $row->getSubjectId()] === [$workflowKey, $subjectType, $subjectId]) {
+            if ([$row->getWorkflowKey(), $row->getSubjectType(), $row->getSubjectId(), $row->getTenantId()] === [$workflowKey, $subjectType, $subjectId, $tenantId]) {
                 return clone $row;
             }
         }
