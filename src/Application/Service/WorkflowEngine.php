@@ -99,12 +99,12 @@ final class WorkflowEngine implements WorkflowEngineInterface
             $this->instanceRepo->save($instance);
         } catch (ConstraintViolationException $e) {
             // Two starts for one subject can both pass the lookup above; the
-            // unique index (workflow_key, subject_type, subject_id) lets only
-            // one insert through. It has no tenant_id, so a subject id another
-            // tenant holds lands here too, past the tenant-filtered lookup.
-            // Any other violation is not disguised.
+            // unique index (workflow_key, subject_type, subject_id, tenant_key)
+            // lets only one insert through. Until the old tenant-less index is
+            // dropped (orm:sync --allow-destructive), another tenant's subject
+            // id lands here too. Any other violation is not disguised.
             $exists = $this->instanceRepo->findBySubject($command->workflowKey, $command->subject->workflowSubjectType(), $command->subject->workflowSubjectId(), self::tenantOf($command->subject)) !== null;
-            if (!$exists && !str_contains($e->getMessage(), 'uniq_workflow_instance_subject')) {
+            if (!$exists && preg_match('/uniq_workflow_instance_|UNIQUE constraint failed: workflow_instances\.workflow_key/', $e->getMessage()) !== 1) {
                 throw $e;
             }
             throw new WorkflowAlreadyExistsException($command->workflowKey, $command->subject->workflowSubjectType(), $command->subject->workflowSubjectId());

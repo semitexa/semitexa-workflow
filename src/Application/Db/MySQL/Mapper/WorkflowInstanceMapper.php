@@ -49,6 +49,7 @@ final class WorkflowInstanceMapper implements ResourceModelMapperInterface
             subjectType: $domainModel->getSubjectType(),
             subjectId: $domainModel->getSubjectId(),
             tenantId: $domainModel->getTenantId(),
+            tenantKey: $domainModel->getTenantId() ?? '',
             currentState: $domainModel->getCurrentState(),
             status: $domainModel->getStatus(),
             version: $domainModel->getVersion(),

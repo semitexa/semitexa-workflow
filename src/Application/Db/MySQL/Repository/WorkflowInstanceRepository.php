@@ -31,6 +31,9 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
         return $this->system()->findById($id);
     }
 
+    // tenant_key (the unique index's copy of tenant_id) is written by the
+    // mapper on every save in this system scope. A tenant-scoped write through
+    // the ORM would stamp tenant_id and leave tenant_key behind: keep writes here.
     public function findBySubject(string $workflowKey, string $subjectType, string $subjectId, ?string $tenantId): ?WorkflowInstance
     {
         // Filtered by the subject's tenant: the system scope answered with
