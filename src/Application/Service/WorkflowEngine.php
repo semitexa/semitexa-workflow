@@ -216,52 +216,53 @@ final class WorkflowEngine implements WorkflowEngineInterface
             );
         }
 
-        $scheduledFollowUp = false;
+        // After the caller's transaction commits, not inside it: the state
+        // now joins that transaction, and a mail sent, a timer set or an
+        // event heard for a transition the caller then rolled back stayed.
+        // Outside a transaction, now, as before.
+        $followUp = function () use ($instance, $transition, $command, $fromState): bool {
+            $scheduledFollowUp = false;
 
-        // Run side-effects post-commit (idempotent; failures are logged but do not rollback)
-        $sideEffectFailures = $this->runSideEffects($transition, $instance, $command);
-        if ($sideEffectFailures !== [] && isset($this->logger)) {
-            $this->logger->warning("Workflow '{$instance->getWorkflowKey()}' transition '{$command->transitionKey}' was applied, but side effects failed.", [
-                'instanceId' => $instance->getId(),
-                'tenantId'   => $instance->getTenantId(),
-                'failures'   => $sideEffectFailures,
-            ]);
-        }
-        // Run again later as the RetryPolicy says, or given up after the transition's events.
-        $givenUp = [];
-        foreach ($sideEffectFailures as $failure) {
-            if (($policy = $transition->retryPolicy) !== null && $policy->maxAttempts > 1
-                && $this->scheduleSideEffectRetry($instance, $transition, $failure['sideEffect'], 2, $policy->backoffForAttempt(1), $command->context)) {
-                $scheduledFollowUp = true;
-                continue;
+            // Run side-effects post-commit (idempotent; failures are logged but do not rollback)
+            $sideEffectFailures = $this->runSideEffects($transition, $instance, $command);
+            if ($sideEffectFailures !== [] && isset($this->logger)) {
+                $this->logger->warning("Workflow '{$instance->getWorkflowKey()}' transition '{$command->transitionKey}' was applied, but side effects failed.", [
+                    'instanceId' => $instance->getId(),
+                    'tenantId'   => $instance->getTenantId(),
+                    'failures'   => $sideEffectFailures,
+                ]);
             }
-            $givenUp[] = $failure;
-            $this->failures()->log($instance, $command->transitionKey, $failure, 1);
-        }
+            // Run again later as the RetryPolicy says, or given up after the transition's events.
+            $givenUp = [];
+            foreach ($sideEffectFailures as $failure) {
+                if (($policy = $transition->retryPolicy) !== null && $policy->maxAttempts > 1
+                    && $this->followUps()->sideEffectRetry($instance, $transition, $failure['sideEffect'], 2, $policy->backoffForAttempt(1), $command->context)) {
+                    $scheduledFollowUp = true;
+                    continue;
+                }
+                $givenUp[] = $failure;
+                $this->failures()->log($instance, $command->transitionKey, $failure, 1);
+            }
 
-        // Schedule timeout job if transition has a timeout policy
-        if ($transition->timeout !== null && isset($this->scheduler)) {
-            $runAt = (new \DateTimeImmutable())->modify("+{$transition->timeout->afterSeconds} seconds");
-            $this->scheduler->dispatchAt(
-                jobClass: WorkflowTimeoutJob::class,
-                runAt: $runAt,
-                payload: [
-                    'workflowKey'   => $instance->getWorkflowKey(),
-                    'instanceId'    => $instance->getId(),
-                    'transitionKey' => $transition->timeout->transitionKey,
-                    'stateVersion'  => $instance->getVersion(), // a later visit has its own timer
-                ],
-                pool: $transition->timeout->pool,
-                tenantId: $instance->getTenantId(),
-                lockKey: "workflow_timeout_{$instance->getId()}_{$transition->timeout->transitionKey}",
-            );
-            $scheduledFollowUp = true;
-        }
+            // Schedule timeout job if transition has a timeout policy
+            if ($transition->timeout !== null && $this->followUps()->timeout($instance, $transition, $command->transitionKey)) {
+                $scheduledFollowUp = true;
+            }
 
-        // Emit post-commit domain events
-        $this->emitTransitionEvents($instance, $transition, $command, $fromState, $sideEffectFailures);
-        foreach ($givenUp as $failure) {
-            $this->failures()->dispatch($instance, $command->transitionKey, $failure);
+            // Emit post-commit domain events
+            $this->emitTransitionEvents($instance, $transition, $command, $fromState, $sideEffectFailures);
+            foreach ($givenUp as $failure) {
+                $this->failures()->dispatch($instance, $command->transitionKey, $failure);
+            }
+
+            return $scheduledFollowUp;
+        };
+        if (isset($this->transactionManager) && $this->transactionManager->isActive()) {
+            $this->transactionManager->afterCommit($followUp);
+            // Not run yet: what it will schedule, as far as can be known now.
+            $scheduledFollowUp = ($transition->timeout !== null && isset($this->scheduler)) || $transition->retryPolicy !== null;
+        } else {
+            $scheduledFollowUp = $followUp();
         }
 
         return WorkflowTransitionResult::applied(
@@ -310,12 +311,17 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
         $policy = $transition->retryPolicy;
         if ($policy !== null && $attempt < $policy->maxAttempts
-            && $this->scheduleSideEffectRetry($instance, $transition, $sideEffectClass, $attempt + 1, $policy->backoffForAttempt($attempt), $context)) {
+            && $this->followUps()->sideEffectRetry($instance, $transition, $sideEffectClass, $attempt + 1, $policy->backoffForAttempt($attempt), $context)) {
             return;
         }
 
         $this->failures()->log($instance, $transitionKey, $failure, $attempt);
         $this->failures()->dispatch($instance, $transitionKey, $failure);
+    }
+
+    private function followUps(): WorkflowFollowUpScheduler
+    {
+        return new WorkflowFollowUpScheduler($this->scheduler ?? null, $this->logger ?? null);
     }
 
     private function failures(): WorkflowFailureReporter
@@ -537,72 +543,6 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
     }
 
-    /**
-     * Schedules attempt $attempt of one side effect, $delaySeconds from now.
-     * Never throws: the transition is already committed.
-     *
-     * @param array<mixed> $context
-     */
-    private function scheduleSideEffectRetry(
-        WorkflowInstance $instance,
-        TransitionDefinition $transition,
-        string $sideEffectClass,
-        int $attempt,
-        int $delaySeconds,
-        array $context,
-    ): bool {
-        if (!isset($this->scheduler)) {
-            $this->log('warning', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}' has a retry policy, but the engine has no scheduler to retry {$sideEffectClass} with.", [
-                'instanceId' => $instance->getId(),
-            ]);
-            return false;
-        }
-        // The scheduler stores the payload as JSON; a context that is not JSON
-        // is left out rather than failing a transition already committed, and
-        // one JSON changes (a date becomes an array, an enum its value) is said.
-        try {
-            $stored = json_decode(json_encode($context, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-            if ($stored !== $context) {
-                $this->log('warning', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}': the context changes when stored as JSON; the retry of {$sideEffectClass} gets the stored form.", [
-                    'instanceId' => $instance->getId(),
-                ]);
-            }
-            // The stored form, whatever the scheduler: the retry gets exactly this.
-            $context = is_array($stored) ? $stored : [];
-        } catch (\JsonException $e) {
-            $this->log('warning', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}': the context cannot be stored as JSON; the retry of {$sideEffectClass} runs without it.", [
-                'instanceId' => $instance->getId(),
-                'message'    => $e->getMessage(),
-            ]);
-            $context = [];
-        }
-        try {
-            $this->scheduler->dispatchAt(
-                jobClass: WorkflowSideEffectRetryJob::class,
-                runAt: (new \DateTimeImmutable())->modify("+{$delaySeconds} seconds"),
-                payload: [
-                    'workflowKey'   => $instance->getWorkflowKey(),
-                    'instanceId'    => $instance->getId(),
-                    'transitionKey' => $transition->key,
-                    'sideEffect'    => $sideEffectClass,
-                    'attempt'       => $attempt,
-                    'context'       => $context,
-                ],
-                tenantId: $instance->getTenantId(),
-                // Unique per scheduled retry: a lock key only guards one run, and
-                // a cyclic workflow can owe the same retry twice at once.
-                lockKey: 'workflow_side_effect_' . $instance->getId() . '_' . substr(sha1($transition->key . '|' . $sideEffectClass . '|' . $attempt), 0, 12) . bin2hex(random_bytes(4)),
-            );
-        } catch (\Throwable $e) {
-            $this->log('error', "Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}': the retry of {$sideEffectClass} could not be scheduled.", [
-                'instanceId' => $instance->getId(),
-                'message'    => $e->getMessage(),
-            ]);
-            return false;
-        }
-        return true;
-    }
-
     private function emitTransitionEvents(
         WorkflowInstance $instance,
         TransitionDefinition $transition,
@@ -668,8 +608,27 @@ final class WorkflowEngine implements WorkflowEngineInterface
         if (!isset($this->eventDispatcher)) {
             return;
         }
-        $event = $this->eventDispatcher->create($eventClass, $data);
-        $this->eventDispatcher->dispatch($event);
+        $dispatch = function () use ($eventClass, $data): void {
+            // A listener that throws is its own failure: it ended apply()
+            // after the commit, and the WorkflowFailed owed after it was
+            // never sent.
+            try {
+                $this->eventDispatcher->dispatch($this->eventDispatcher->create($eventClass, $data));
+            } catch (\Throwable $e) {
+                $this->log('error', "A listener of {$eventClass} failed: {$e->getMessage()}", [
+                    'instanceId' => $data['instanceId'] ?? null,
+                    'workflowKey' => $data['workflowKey'] ?? null,
+                ]);
+            }
+        };
+        // Heard once the caller's transaction commits: a rolled-back start or
+        // transition is not announced.
+        if (isset($this->transactionManager) && $this->transactionManager->isActive()) {
+            $this->transactionManager->afterCommit($dispatch);
+
+            return;
+        }
+        $dispatch();
     }
 
     /** '' is no tenant, as null is: otherwise a start with '' missed an instance started with null. */

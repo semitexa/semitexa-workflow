@@ -39,6 +39,8 @@ use Semitexa\Workflow\Domain\Model\TimeoutPolicy;
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
+use Semitexa\Orm\Domain\Model\ConnectionConfig;
+use Semitexa\Orm\OrmManager;
 
 /**
  * The engine itself — transitions, guards, the terminal state, the version
@@ -451,6 +453,73 @@ final class WorkflowEngineTest extends TestCase
         self::assertSame(10, (new RetryPolicy(backoffSeconds: 10, backoffMultiplier: 3.0, maxBackoffSeconds: 100))->backoffForAttempt(1));
         self::assertSame(90, (new RetryPolicy(backoffSeconds: 10, backoffMultiplier: 3.0, maxBackoffSeconds: 100))->backoffForAttempt(3));
         self::assertSame(100, (new RetryPolicy(backoffSeconds: 10, backoffMultiplier: 3.0, maxBackoffSeconds: 100))->backoffForAttempt(4));
+        // Past ~58 attempts the product overflowed the int cast and came out 0.
+        self::assertSame(3600, (new RetryPolicy())->backoffForAttempt(60));
+        self::assertSame(3600, (new RetryPolicy())->backoffForAttempt(5000));
+    }
+
+    /**
+     * The state joins the caller's transaction: run inside it, a side effect
+     * (a mail) and the events went out for a transition the caller then
+     * rolled back.
+     */
+    #[Test]
+    public function inside_a_transaction_the_side_effects_and_events_wait_for_its_commit(): void
+    {
+        $engine = $this->engine();
+        $tm = (new OrmManager(config: new ConnectionConfig(driver: 'sqlite', sqliteMemory: true)))->getTransactionManager();
+        (new \ReflectionProperty(WorkflowEngine::class, 'transactionManager'))->setValue($engine, $tm);
+        $order = $engine->start($this->startOrder());
+
+        $tm->run(function () use ($engine, $order): void {
+            $engine->apply($this->command($order, 'pay'));
+            self::assertSame(0, EngineFixtures::$sideEffectRuns, 'not before the commit');
+        });
+        self::assertSame(1, EngineFixtures::$sideEffectRuns, 'after it');
+        self::assertContains(WorkflowTransitionApplied::class, $this->events->classes());
+
+        // Back to `new` (the in-memory store keeps what a rollback would undo).
+        $engine->apply($this->command($order, 'refund'));
+        $eventsBefore = count($this->events->classes());
+        try {
+            $tm->run(function () use ($engine, $order): void {
+                $engine->apply($this->command($order, 'pay'));
+                throw new \RuntimeException('the caller rolls back');
+            });
+        } catch (\RuntimeException) {
+        }
+
+        self::assertSame(1, EngineFixtures::$sideEffectRuns, 'no mail for a rolled-back transition');
+        self::assertCount($eventsBefore, $this->events->classes(), 'nor an event');
+    }
+
+    /** It threw after the commit: the instance waited with no timer, the caller got an exception. */
+    #[Test]
+    public function a_timeout_that_cannot_be_scheduled_is_said_and_the_transition_stands(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $this->scheduler->refuse = true;
+
+        $result = $engine->apply($this->command($order, 'send_quote'));
+
+        self::assertSame(TransitionResultEnum::Applied, $result->result);
+        self::assertFalse($result->scheduledFollowUp);
+        self::assertStringContainsString('timeout could not be scheduled', $this->log->errors[0][0] ?? '');
+    }
+
+    /** A throwing listener ended apply() after the commit, and the WorkflowFailed owed after it was never sent. */
+    #[Test]
+    public function a_listener_that_throws_does_not_stop_the_events_after_it(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $this->events->throwOn = WorkflowTransitionApplied::class;
+
+        $result = $engine->apply($this->command($order, 'pay'));
+
+        self::assertSame(TransitionResultEnum::Applied, $result->result);
+        self::assertContains(WorkflowFailed::class, $this->events->classes(), 'the give-up still reported');
     }
 
     private function retryDelay(int $job): int
