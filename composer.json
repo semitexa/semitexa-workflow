@@ -29,7 +29,8 @@
         "semitexa": {
             "floors": {
                 "semitexa/core": "next",
-                "semitexa/scheduler": "next"
+                "semitexa/scheduler": "next",
+                "semitexa/orm": "next"
             }
         }
     },
