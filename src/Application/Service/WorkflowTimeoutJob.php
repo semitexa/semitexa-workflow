@@ -71,6 +71,9 @@ final class WorkflowTimeoutJob implements ScheduledJobInterface
             triggeredByType: 'scheduler',
             triggeredById:  $context->runId,
             context:        ['schedulerRunId' => $context->runId],
+            // Checked again where it is applied: between the check above and
+            // the engine's own read, the instance could leave and come back.
+            expectedVersion: is_int($stateVersion) ? $stateVersion : null,
         ));
     }
 }

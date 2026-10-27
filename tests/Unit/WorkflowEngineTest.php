@@ -216,6 +216,25 @@ final class WorkflowEngineTest extends TestCase
         self::assertSame('paid', $this->instances->findById($order->getId())?->getCurrentState());
     }
 
+    /** The timer's own check, then a move before the engine read it, ended a visit the timer never saw. */
+    #[Test]
+    public function a_transition_for_another_version_is_a_conflict_and_changes_nothing(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $engine->apply($this->command($order, 'send_quote'));
+        $quoted = $this->instances->findById($order->getId());
+        self::assertNotNull($quoted);
+
+        $stale = new ApplyTransitionCommand('order', $order->getId(), 'expire', TriggerType::Scheduled, 'scheduler', 'run-1', expectedVersion: $quoted->getVersion() - 1);
+        $result = $engine->apply($stale);
+
+        self::assertSame('version_conflict', $result->failureCode);
+        self::assertSame('quoted', $this->instances->findById($order->getId())?->getCurrentState());
+        $fresh = new ApplyTransitionCommand('order', $order->getId(), 'expire', TriggerType::Scheduled, 'scheduler', 'run-1', expectedVersion: $quoted->getVersion());
+        self::assertSame('expired', $engine->apply($fresh)->toState);
+    }
+
     #[Test]
     public function a_transition_that_needs_approval_waits_for_a_person(): void
     {

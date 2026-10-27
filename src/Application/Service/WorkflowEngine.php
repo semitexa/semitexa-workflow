@@ -140,6 +140,13 @@ final class WorkflowEngine implements WorkflowEngineInterface
             return WorkflowTransitionResult::rejectedInvalid($instance->getId(), $command->transitionKey, $instance->getCurrentState(), 'workflow_mismatch', $message);
         }
 
+        // Read here and saved with this version: the caller's own check, then a
+        // move between it and this read, applied the transition to a visit the
+        // caller never saw.
+        if ($command->expectedVersion !== null && $instance->getVersion() !== $command->expectedVersion) {
+            return WorkflowTransitionResult::rejectedConflict($instance->getId(), $command->transitionKey, $instance->getCurrentState());
+        }
+
         // Reject if already in a terminal state
         if (WorkflowStatus::from($instance->getStatus())->isTerminal()) {
             return WorkflowTransitionResult::rejectedInvalid(
