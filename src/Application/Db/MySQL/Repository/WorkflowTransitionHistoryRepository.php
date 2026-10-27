@@ -80,12 +80,20 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
         return $this->orm()->getQueryAdapter();
     }
 
+    /**
+     * The persisted state — the id the insert made, above all — back into the
+     * caller's instance. Through reflection: the model's properties are
+     * private, and get_object_vars() from here saw none of them, so save()
+     * copied nothing: a saved history entry kept an empty id.
+     */
     private function copyIntoMutableDomain(object $source, WorkflowTransitionHistory $target): void
     {
         $source instanceof WorkflowTransitionHistory || throw new \InvalidArgumentException('Unexpected persisted domain model.');
 
-        foreach (get_object_vars($source) as $property => $value) {
-            $target->{$property} = $value;
+        foreach ((new \ReflectionObject($source))->getProperties() as $property) {
+            if (!$property->isStatic() && $property->isInitialized($source)) {
+                $property->setValue($target, $property->getValue($source));
+            }
         }
     }
 }

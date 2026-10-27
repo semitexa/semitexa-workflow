@@ -33,6 +33,17 @@ final class WorkflowWorkerProcessesTest extends TestCase
 
         self::assertSame(['5 scheduler:work slow'], $lines);
     }
+
+    #[Test]
+    public function a_timeout_pool_no_worker_can_be_started_for_is_refused(): void
+    {
+        // Accepted, it got no worker (a warning said so) and its timeouts
+        // were dispatched to a pool nothing reads.
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("A timeout pool must be one plain word (letters, digits and . _ : / = -), got 'slow lane': scheduler:work cannot be started for it.");
+
+        new TimeoutPolicy(3600, 'expire', pool: 'slow lane');
+    }
 }
 
 final class PoolsQuoteWorkflow implements WorkflowDefinitionInterface

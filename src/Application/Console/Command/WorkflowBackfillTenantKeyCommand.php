@@ -34,10 +34,16 @@ final class WorkflowBackfillTenantKeyCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        $updated = $this->orm->getAdapter()->execute(
+        $db = $this->orm->getAdapter();
+        // An instance started with tenant '' before '' meant no tenant: the
+        // lookup now asks for tenant_id IS NULL and missed it, and a new start
+        // for the same subject took the same tenant_key '' and was refused by
+        // the unique index while no instance was found.
+        $normalized = $db->execute("UPDATE workflow_instances SET tenant_id = NULL WHERE tenant_id = ''")->rowCount;
+        $updated = $db->execute(
             "UPDATE workflow_instances SET tenant_key = tenant_id WHERE tenant_id IS NOT NULL AND tenant_key <> tenant_id",
         )->rowCount;
-        $io->success("Filled tenant_key on {$updated} workflow instance(s).");
+        $io->success("Filled tenant_key on {$updated} workflow instance(s); {$normalized} with tenant '' now have none.");
 
         return Command::SUCCESS;
     }

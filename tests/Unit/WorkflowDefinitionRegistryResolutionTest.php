@@ -157,11 +157,6 @@ final class WorkflowDefinitionRegistryResolutionTest extends TestCase
         $registry->all();
     }
 
-    /**
-     * Build a registry whose discovery returns exactly the given classes.
-     *
-     * @param class-string $definitionClass
-     */
     #[Test]
     public function two_definitions_under_one_key_are_refused(): void
     {
@@ -181,6 +176,11 @@ final class WorkflowDefinitionRegistryResolutionTest extends TestCase
         $registry->all();
     }
 
+    /**
+     * Build a registry whose discovery returns exactly the given classes.
+     *
+     * @param class-string $definitionClass
+     */
     private function registryDiscovering(
         string $definitionClass,
         ?ContainerInterface $container = null,

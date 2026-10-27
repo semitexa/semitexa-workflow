@@ -368,7 +368,9 @@ final class WorkflowEngineTest extends TestCase
         self::assertSame("Workflow 'order' transition 'pay_retried': side effect " . EngineReceiptSideEffect::class . ' failed 3 times; giving up.', $this->log->errors[0][0]);
         self::assertSame(['code' => 'mailer_down', 'message' => 'SMTP refused'], array_intersect_key($this->log->errors[0][1], ['code' => 1, 'message' => 1]));
         self::assertSame([WorkflowFailed::class], array_values(array_filter($this->events->classes(), static fn (string $c): bool => $c === WorkflowFailed::class)), 'given up once, after the last attempt');
-        $failed = $this->events->payloads[array_search(WorkflowFailed::class, $this->events->classes(), true)];
+        $failedAt = array_search(WorkflowFailed::class, $this->events->classes(), true);
+        self::assertIsInt($failedAt);
+        $failed = $this->events->payloads[$failedAt];
         self::assertSame(['instanceId' => $order->getId(), 'workflowKey' => 'order', 'failedState' => 'paid', 'failureCode' => 'mailer_down'], array_intersect_key($failed, ['instanceId' => 1, 'workflowKey' => 1, 'failedState' => 1, 'failureCode' => 1]));
         self::assertSame('pay_retried: ' . EngineReceiptSideEffect::class . ': SMTP refused', $failed['failureMessage']);
     }
@@ -418,7 +420,9 @@ final class WorkflowEngineTest extends TestCase
         $result = $engine->apply($this->command($order, 'pay_retried'));
 
         self::assertFalse($result->scheduledFollowUp);
-        $failed = $this->events->payloads[array_search(WorkflowFailed::class, $this->events->classes(), true)];
+        $failedAt = array_search(WorkflowFailed::class, $this->events->classes(), true);
+        self::assertIsInt($failedAt);
+        $failed = $this->events->payloads[$failedAt];
         self::assertSame(['failedState' => 'paid', 'failureCode' => 'mailer_down', 'tenantId' => 't-1'], array_intersect_key($failed, ['failedState' => 1, 'failureCode' => 1, 'tenantId' => 1]));
         self::assertSame('pay_retried: ' . EngineReceiptSideEffect::class . ': SMTP refused', $failed['failureMessage']);
     }
@@ -443,8 +447,11 @@ final class WorkflowEngineTest extends TestCase
         $engine = $this->engine();
         $order = $engine->start($this->startOrder());
 
-        $engine->apply($this->command($order, 'pay_retried'));
+        $result = $engine->apply($this->command($order, 'pay_retried'));
 
+        self::assertSame(TransitionResultEnum::Applied, $result->result);
+        self::assertTrue($result->scheduledFollowUp);
+        self::assertSame([WorkflowSideEffectRetryJob::class], array_column($this->scheduler->jobs, 'jobClass'), 'the retry is scheduled');
         self::assertNotContains(WorkflowFailed::class, $this->events->classes());
     }
 
@@ -588,7 +595,6 @@ final class WorkflowEngineTest extends TestCase
         return $this->scheduler->jobs[$job]['runAt']->getTimestamp() - time();
     }
 
-    /** @param array<string, mixed> $payload */
     #[Test]
     public function a_command_for_another_workflow_does_not_apply_its_rules_to_this_instance(): void
     {
@@ -613,7 +619,9 @@ final class WorkflowEngineTest extends TestCase
         $engine->apply($this->command($order, 'accept'));
         $engine->apply($this->command($order, 'refund'));
         $engine->apply($this->command($order, 'send_quote'));
-        $secondTimer = end($this->scheduler->jobs)['payload'];
+        $lastJob = array_key_last($this->scheduler->jobs);
+        self::assertSame(1, $lastJob, 'the second visit scheduled its own timer');
+        $secondTimer = $this->scheduler->jobs[$lastJob]['payload'];
 
         $this->runTimeoutJob($engine, $firstTimer);
         self::assertSame('quoted', $engine->get($order->getId())?->getCurrentState(), 'the first visit\'s timer expired the second visit');
@@ -626,7 +634,7 @@ final class WorkflowEngineTest extends TestCase
     public function a_subject_is_looked_up_in_its_own_tenant(): void
     {
         $engine = $this->engine();
-        $engine->start($this->startOrder());
+        $order = $engine->start($this->startOrder());
 
         $sameIdOtherTenant = new class implements WorkflowSubjectReferenceInterface {
             public function workflowSubjectType(): string { return 'order'; }
@@ -634,9 +642,17 @@ final class WorkflowEngineTest extends TestCase
             public function workflowTenantId(): ?string { return 't-2'; }
         };
 
+        $ownTenant = new class implements WorkflowSubjectReferenceInterface {
+            public function workflowSubjectType(): string { return 'order'; }
+            public function workflowSubjectId(): string { return 'order-1'; }
+            public function workflowTenantId(): ?string { return 't-1'; }
+        };
+
+        self::assertSame($order->getId(), $engine->findBySubject('order', $ownTenant)?->getId(), 'tenant t-1 lost its own workflow');
         self::assertNull($engine->findBySubject('order', $sameIdOtherTenant), "tenant t-2 read tenant t-1's workflow");
     }
 
+    /** @param array<string, mixed> $payload */
     private function runRetryJob(WorkflowEngine $engine, array $payload): void
     {
         $job = new WorkflowSideEffectRetryJob();

@@ -13,5 +13,14 @@ final readonly class TimeoutPolicy
         public string $transitionKey,
         /** Pool to use for the timeout scheduler job */
         public string $pool = 'default',
-    ) {}
+    ) {
+        // The pool becomes an argument of its own scheduler:work, and the
+        // worker container takes one plain word there (core's WorkerProcess
+        // rule). A pool like 'slow lane' was accepted here, its worker was
+        // left out with a warning, and its timeouts were dispatched to a pool
+        // nothing reads.
+        if (preg_match('/^[A-Za-z0-9._:\/=-]+$/', $pool) !== 1) {
+            throw new \InvalidArgumentException("A timeout pool must be one plain word (letters, digits and . _ : / = -), got '{$pool}': scheduler:work cannot be started for it.");
+        }
+    }
 }

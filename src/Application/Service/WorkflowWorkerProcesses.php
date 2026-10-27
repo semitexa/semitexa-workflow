@@ -8,7 +8,6 @@ use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\AsWorkerProcessSource;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\WorkerProcessSourceInterface;
-use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Queue\WorkerProcess;
 
 /**
@@ -35,15 +34,11 @@ final class WorkflowWorkerProcesses implements WorkerProcessSourceInterface
         }
         ksort($pools);
 
-        $processes = [];
-        foreach (array_keys($pools) as $pool) {
-            try {
-                $processes[] = new WorkerProcess(['scheduler:work', (string) $pool]);
-            } catch (\InvalidArgumentException $e) {
-                StaticLoggerBridge::warning('workflow', "Timeout pool '{$pool}' gets no scheduler:work: " . $e->getMessage(), []);
-            }
-        }
-
-        return $processes;
+        // TimeoutPolicy refuses a pool that cannot be a worker argument, so
+        // every pool here gets its worker.
+        return array_map(
+            static fn (int|string $pool): WorkerProcess => new WorkerProcess(['scheduler:work', (string) $pool]),
+            array_keys($pools),
+        );
     }
 }
