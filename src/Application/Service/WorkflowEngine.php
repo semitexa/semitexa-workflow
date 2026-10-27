@@ -281,7 +281,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         );
     }
 
-    public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = []): void
+    public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = [], ?string $chain = null): void
     {
         $this->assertDependenciesAvailable();
 
@@ -318,7 +318,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
         $policy = $transition->retryPolicy;
         if ($policy !== null && $attempt < $policy->maxAttempts
-            && $this->followUps()->sideEffectRetry($instance, $transition, $sideEffectClass, $attempt + 1, $policy->backoffForAttempt($attempt), $context)) {
+            && $this->followUps()->sideEffectRetry($instance, $transition, $sideEffectClass, $attempt + 1, $policy->backoffForAttempt($attempt), $context, $chain)) {
             return;
         }
 

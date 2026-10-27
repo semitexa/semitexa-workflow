@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Workflow\Application\Service;
 
 use Semitexa\Core\Log\LoggerInterface;
+use Semitexa\Scheduler\Domain\Contract\DeduplicatingSchedulerInterface;
 use Semitexa\Scheduler\Domain\Contract\SchedulerInterface;
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
@@ -61,7 +62,10 @@ final class WorkflowFollowUpScheduler
 
     /**
      * Schedules attempt $attempt of one side effect, $delaySeconds from now.
-     * Never throws: the transition is already committed.
+     * Never throws: the transition is already committed. $chain names the
+     * retries of one failure (a new one for the first retry): a reclaimed run
+     * and the slow original both scheduled the next attempt, and the chain
+     * forked; with a deduplicating scheduler one attempt is scheduled once.
      *
      * @param array<mixed> $context
      */
@@ -72,6 +76,7 @@ final class WorkflowFollowUpScheduler
         int $attempt,
         int $delaySeconds,
         array $context,
+        ?string $chain = null,
     ): bool {
         if ($this->scheduler === null) {
             $this->logger?->warning("Workflow '{$instance->getWorkflowKey()}' transition '{$transition->key}' has a retry policy, but the engine has no scheduler to retry {$sideEffectClass} with.", [
@@ -98,18 +103,39 @@ final class WorkflowFollowUpScheduler
             ]);
             $context = [];
         }
+        $chain ??= bin2hex(random_bytes(8));
+        $job = [
+            'jobClass' => WorkflowSideEffectRetryJob::class,
+            'runAt' => (new \DateTimeImmutable())->modify("+{$delaySeconds} seconds"),
+            'payload' => [
+                'workflowKey'   => $instance->getWorkflowKey(),
+                'instanceId'    => $instance->getId(),
+                'transitionKey' => $transition->key,
+                'sideEffect'    => $sideEffectClass,
+                'attempt'       => $attempt,
+                'context'       => $context,
+                'chain'         => $chain,
+            ],
+        ];
         try {
+            if ($this->scheduler instanceof DeduplicatingSchedulerInterface) {
+                // Null: this attempt of the chain is scheduled already.
+                $this->scheduler->dispatchOnceAt(
+                    occurrenceKey: "workflow-side-effect:{$instance->getId()}:{$chain}:{$attempt}",
+                    jobClass: $job['jobClass'],
+                    runAt: $job['runAt'],
+                    payload: $job['payload'],
+                    tenantId: $instance->getTenantId(),
+                    maxAttempts: 3,
+                    retryBackoffSeconds: 30,
+                );
+
+                return true;
+            }
             $this->scheduler->dispatchAt(
-                jobClass: WorkflowSideEffectRetryJob::class,
-                runAt: (new \DateTimeImmutable())->modify("+{$delaySeconds} seconds"),
-                payload: [
-                    'workflowKey'   => $instance->getWorkflowKey(),
-                    'instanceId'    => $instance->getId(),
-                    'transitionKey' => $transition->key,
-                    'sideEffect'    => $sideEffectClass,
-                    'attempt'       => $attempt,
-                    'context'       => $context,
-                ],
+                jobClass: $job['jobClass'],
+                runAt: $job['runAt'],
+                payload: $job['payload'],
                 tenantId: $instance->getTenantId(),
                 // Unique per scheduled retry: a lock key only guards one run, and
                 // a cyclic workflow can owe the same retry twice at once.

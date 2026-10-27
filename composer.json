@@ -28,7 +28,8 @@
         },
         "semitexa": {
             "floors": {
-                "semitexa/core": "next"
+                "semitexa/core": "next",
+                "semitexa/scheduler": "next"
             }
         }
     },

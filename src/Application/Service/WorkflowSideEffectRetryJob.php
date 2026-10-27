@@ -40,11 +40,13 @@ final class WorkflowSideEffectRetryJob implements ScheduledJobInterface
         $sideEffect    = is_string($payload['sideEffect'] ?? null) ? $payload['sideEffect'] : '';
         $attempt       = is_int($payload['attempt'] ?? null) ? $payload['attempt'] : 0;
         $callContext   = is_array($payload['context'] ?? null) ? $payload['context'] : [];
+        // Absent from a retry scheduled before chains: it starts one.
+        $chain         = is_string($payload['chain'] ?? null) ? $payload['chain'] : null;
 
         if ($workflowKey === '' || $instanceId === '' || $transitionKey === '' || $sideEffect === '' || $attempt < 2) {
             return;
         }
 
-        $this->engine->retrySideEffect($workflowKey, $instanceId, $transitionKey, $sideEffect, $attempt, $callContext);
+        $this->engine->retrySideEffect($workflowKey, $instanceId, $transitionKey, $sideEffect, $attempt, $callContext, $chain);
     }
 }

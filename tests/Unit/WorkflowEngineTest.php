@@ -56,7 +56,7 @@ final class WorkflowEngineTest extends TestCase
 
     private EngineEvents $events;
 
-    private EngineScheduler $scheduler;
+    private EngineScheduler|EngineDedupScheduler $scheduler;
 
     private EngineLog $log;
 
@@ -295,6 +295,24 @@ final class WorkflowEngineTest extends TestCase
      * policy's backoff (doubling here, capped at 45 s), and given up after
      * maxAttempts attempts in all, the first one included.
      */
+    /** A reclaimed retry run and the slow original both scheduled the next attempt: the chain forked. */
+    #[Test]
+    public function two_runs_of_one_retry_schedule_its_next_attempt_once(): void
+    {
+        $this->scheduler = new EngineDedupScheduler();
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $engine->apply($this->command($order, 'pay_retried', ['note' => 'gift']));
+        self::assertCount(1, $this->scheduler->jobs);
+        $payload = $this->scheduler->jobs[0]['payload'];
+
+        $this->runRetryJob($engine, $payload);
+        $this->runRetryJob($engine, $payload);
+
+        self::assertCount(2, $this->scheduler->jobs, 'attempt 3 once, not twice');
+        self::assertSame(3, $this->scheduler->jobs[1]['payload']['attempt']);
+    }
+
     #[Test]
     public function a_failing_side_effect_is_retried_as_its_retry_policy_says_then_given_up(): void
     {
@@ -306,6 +324,8 @@ final class WorkflowEngineTest extends TestCase
         self::assertTrue($result->scheduledFollowUp, 'a retry is scheduled');
         self::assertSame(1, EngineFixtures::$sideEffectRuns);
         self::assertEqualsWithDelta(30, $this->retryDelay(0), 1, 'first wait: backoffSeconds');
+        $chain = $this->scheduler->jobs[0]['payload']['chain'] ?? null;
+        self::assertIsString($chain, 'the retries of one failure share a chain');
         self::assertSame([
             'workflowKey' => 'order',
             'instanceId' => $order->getId(),
@@ -313,6 +333,7 @@ final class WorkflowEngineTest extends TestCase
             'sideEffect' => EngineReceiptSideEffect::class,
             'attempt' => 2,
             'context' => ['note' => 'gift'],
+            'chain' => $chain,
         ], $this->scheduler->jobs[0]['payload']);
 
         $this->runRetryJob($engine, $this->scheduler->jobs[0]['payload']);
@@ -320,6 +341,7 @@ final class WorkflowEngineTest extends TestCase
         self::assertCount(2, $this->scheduler->jobs);
         self::assertEqualsWithDelta(45, $this->retryDelay(1), 1, 'second wait: 30 x 2 = 60, capped at maxBackoffSeconds');
         self::assertSame(3, $this->scheduler->jobs[1]['payload']['attempt']);
+        self::assertSame($chain, $this->scheduler->jobs[1]['payload']['chain'] ?? null, 'the next attempt keeps the chain');
 
         $this->runRetryJob($engine, $this->scheduler->jobs[1]['payload']);
         self::assertSame(3, EngineFixtures::$sideEffectRuns, 'maxAttempts: 3 runs in all');
@@ -917,4 +939,37 @@ final class EngineLog implements LoggerInterface
     public function info(string $message, array $context = []): void {}
     public function notice(string $message, array $context = []): void {}
     public function debug(string $message, array $context = []): void {}
+}
+
+final class EngineDedupScheduler implements \Semitexa\Scheduler\Domain\Contract\DeduplicatingSchedulerInterface
+{
+    /** @var list<array{jobClass: string, runAt: \DateTimeImmutable, payload: array<string, mixed>, lockKey: ?string}> */
+    public array $jobs = [];
+
+    public bool $refuse = false;
+
+    /** @var array<string, true> */
+    private array $keys = [];
+
+    public function dispatchOnceAt(string $occurrenceKey, string $jobClass, \DateTimeImmutable $runAt, array $payload = [], ?string $pool = null, ?string $tenantId = null, ?string $lockKey = null, int $maxAttempts = 1, int $retryBackoffSeconds = 0): ?string
+    {
+        if (isset($this->keys[$occurrenceKey])) {
+            return null;
+        }
+        $this->keys[$occurrenceKey] = true;
+
+        return $this->dispatchAt($jobClass, $runAt, $payload, $pool, $tenantId, $lockKey);
+    }
+
+    public function dispatchAt(string $jobClass, \DateTimeImmutable $runAt, array $payload = [], ?string $pool = null, ?string $tenantId = null, ?string $lockKey = null, int $maxAttempts = 1, int $retryBackoffSeconds = 0): string
+    {
+        $this->jobs[] = ['jobClass' => $jobClass, 'runAt' => $runAt, 'payload' => $payload, 'lockKey' => $lockKey];
+
+        return 'job-' . count($this->jobs);
+    }
+
+    public function dispatchAfter(string $jobClass, \DateInterval $delay, array $payload = [], ?string $pool = null, ?string $tenantId = null, ?string $lockKey = null, int $maxAttempts = 1, int $retryBackoffSeconds = 0): string
+    {
+        return $this->dispatchAt($jobClass, (new \DateTimeImmutable())->add($delay), $payload, $pool, $tenantId, $lockKey);
+    }
 }

@@ -41,7 +41,7 @@ interface WorkflowEngineInterface
      *
      * @param array<string, mixed> $context the command context the transition ran with
      */
-    public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = []): void;
+    public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = [], ?string $chain = null): void;
 
     /**
      * Load a workflow instance by ID.
