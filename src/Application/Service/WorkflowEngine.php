@@ -323,7 +323,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
 
         $this->failures()->log($instance, $transitionKey, $failure, $attempt);
-        $this->failures()->dispatch($instance, $transitionKey, $failure);
+        $this->failures()->dispatch($instance, $transitionKey, $failure, $transition->toState);
     }
 
     private function followUps(): WorkflowFollowUpScheduler

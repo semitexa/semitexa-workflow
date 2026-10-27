@@ -34,8 +34,14 @@ final class WorkflowFailureReporter
         ]);
     }
 
-    /** @param array{sideEffect: string, code: string, message: string} $failure */
-    public function dispatch(WorkflowInstance $instance, string $transitionKey, array $failure): void
+    /**
+     * $failedState: the state the failed side effect's transition led to. A
+     * retry that ran out after the instance moved on reported the state it
+     * had moved to, a state the side effect had nothing to do with.
+     *
+     * @param array{sideEffect: string, code: string, message: string} $failure
+     */
+    public function dispatch(WorkflowInstance $instance, string $transitionKey, array $failure, ?string $failedState = null): void
     {
         if ($this->events === null) {
             return;
@@ -46,7 +52,7 @@ final class WorkflowFailureReporter
                 'workflowKey'    => $instance->getWorkflowKey(),
                 'subjectType'    => $instance->getSubjectType(),
                 'subjectId'      => $instance->getSubjectId(),
-                'failedState'    => $instance->getCurrentState(),
+                'failedState'    => $failedState ?? $instance->getCurrentState(),
                 'failureCode'    => $failure['code'],
                 'failureMessage' => "{$transitionKey}: {$failure['sideEffect']}: {$failure['message']}",
                 'tenantId'       => $instance->getTenantId(),

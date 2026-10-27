@@ -295,6 +295,24 @@ final class WorkflowEngineTest extends TestCase
      * policy's backoff (doubling here, capped at 45 s), and given up after
      * maxAttempts attempts in all, the first one included.
      */
+    /** A retry that ran out after the instance moved on reported the state it had moved to. */
+    #[Test]
+    public function a_side_effect_given_up_after_the_instance_moved_on_reports_its_own_transitions_state(): void
+    {
+        $engine = $this->engine();
+        $order = $engine->start($this->startOrder());
+        $engine->apply($this->command($order, 'pay_retried', ['note' => 'gift']));
+        $engine->apply($this->command($order, 'hold'));
+        $this->events->payloads = [];
+
+        $this->runRetryJob($engine, $this->scheduler->jobs[0]['payload']);
+        $this->runRetryJob($engine, $this->scheduler->jobs[1]['payload']);
+
+        $failed = array_values(array_filter($this->events->payloads, static fn (array $p): bool => isset($p['failedState'])));
+        self::assertSame('review', $this->instances->findById($order->getId())?->getCurrentState(), 'the instance moved on');
+        self::assertSame('paid', $failed[0]['failedState'] ?? null, 'the state the side effect belonged to');
+    }
+
     /** A reclaimed retry run and the slow original both scheduled the next attempt: the chain forked. */
     #[Test]
     public function two_runs_of_one_retry_schedule_its_next_attempt_once(): void
@@ -693,6 +711,7 @@ final class EngineOrderWorkflow implements WorkflowDefinitionInterface
             new TransitionDefinition('expire', ['quoted'], 'expired', triggerType: TriggerType::Scheduled),
             new TransitionDefinition('flag', ['new'], 'review', requiresManualApproval: true),
             new TransitionDefinition('pay_retried', ['new'], 'paid', sideEffects: [EngineReceiptSideEffect::class], retryPolicy: new RetryPolicy(maxAttempts: 3, backoffSeconds: 30, backoffMultiplier: 2.0, maxBackoffSeconds: 45)),
+            new TransitionDefinition('hold', ['paid'], 'review'),
             new TransitionDefinition('pay_flaky', ['new'], 'paid', sideEffects: [EngineFlakySideEffect::class], retryPolicy: new RetryPolicy(maxAttempts: 3, backoffSeconds: 30)),
         ];
     }
