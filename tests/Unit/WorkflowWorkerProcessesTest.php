@@ -40,9 +40,29 @@ final class WorkflowWorkerProcessesTest extends TestCase
         // Accepted, it got no worker (a warning said so) and its timeouts
         // were dispatched to a pool nothing reads.
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("A timeout pool must be one plain word (letters, digits and . _ : / = -), got 'slow lane': scheduler:work cannot be started for it.");
+        $this->expectExceptionMessage("A timeout pool must be one plain word (letters, digits and . _ : / = -, not starting with -), got 'slow lane': scheduler:work cannot be started for it.");
 
         new TimeoutPolicy(3600, 'expire', pool: 'slow lane');
+    }
+
+    /**
+     * '--slow' was read by scheduler:work as an option, so the worker exited;
+     * 'slow\n' passed the old regex ($ also matches before a final newline)
+     * and its worker was started for 'slow'. Either way, nothing read the pool.
+     */
+    #[Test]
+    public function a_pool_the_worker_would_misread_is_refused(): void
+    {
+        $refused = [];
+        foreach (['--slow', '-s', "slow\n", 'slow-lane'] as $pool) {
+            try {
+                new TimeoutPolicy(3600, 'expire', pool: $pool);
+            } catch (\InvalidArgumentException) {
+                $refused[] = $pool;
+            }
+        }
+
+        self::assertSame(['--slow', '-s', "slow\n"], $refused, 'a hyphen inside a name is still fine');
     }
 }
 
