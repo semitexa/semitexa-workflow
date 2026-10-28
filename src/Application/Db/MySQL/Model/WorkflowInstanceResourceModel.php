@@ -14,7 +14,10 @@ use Semitexa\Orm\Metadata\HasColumnReferences;
 use Semitexa\Orm\Metadata\HasRelationReferences;
 
 #[FromTable(name: 'workflow_instances')]
-#[Index(columns: ['workflow_key', 'subject_type', 'subject_id'], unique: true, name: 'uniq_workflow_instance_subject')]
+// One instance per subject per tenant: without the tenant two tenants could
+// not run a workflow for the same subject id. tenant_key is tenant_id, or ''
+// for a global instance (a unique index lets any number of NULLs through).
+#[Index(columns: ['workflow_key', 'subject_type', 'subject_id', 'tenant_key'], unique: true, name: 'uniq_workflow_instance_tenant_subject')]
 #[Index(columns: ['tenant_id', 'status', 'waiting_until'], name: 'idx_workflow_instances_tenant_status_waiting')]
 #[Index(columns: ['workflow_key', 'current_state'], name: 'idx_workflow_instances_key_state')]
 #[Index(columns: ['awaiting_manual_action', 'updated_at'], name: 'idx_workflow_instances_manual_action')]
@@ -79,5 +82,8 @@ final readonly class WorkflowInstanceResourceModel
 
         #[Column(name: 'completed_at', type: MySqlType::Datetime, nullable: true)]
         public ?\DateTimeImmutable $completedAt,
+
+        #[Column(name: 'tenant_key', type: MySqlType::Varchar, length: 64, default: '')]
+        public string $tenantKey = '',
     ) {}
 }

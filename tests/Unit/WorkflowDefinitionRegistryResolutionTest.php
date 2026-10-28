@@ -157,6 +157,25 @@ final class WorkflowDefinitionRegistryResolutionTest extends TestCase
         $registry->all();
     }
 
+    #[Test]
+    public function two_definitions_under_one_key_are_refused(): void
+    {
+        // The one discovered last won, so which rules applied depended on
+        // discovery order.
+        $registry = new WorkflowDefinitionRegistry();
+        (new \ReflectionProperty(WorkflowDefinitionRegistry::class, 'classDiscovery'))->setValue($registry, new class extends ClassDiscovery {
+            public function __construct() {}
+            public function findClassesWithAttribute(string $attributeClass): array
+            {
+                return [InjectedWorkflowProbe::class, DuplicateKeyWorkflowProbe::class];
+            }
+        });
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('probe.injected');
+        $registry->all();
+    }
+
     /**
      * Build a registry whose discovery returns exactly the given classes.
      *
@@ -232,4 +251,8 @@ class InjectedWorkflowProbe implements WorkflowDefinitionInterface
     {
         return ['done'];
     }
+}
+
+final class DuplicateKeyWorkflowProbe extends InjectedWorkflowProbe
+{
 }

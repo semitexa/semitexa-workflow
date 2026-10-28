@@ -29,6 +29,7 @@ use Semitexa\Workflow\Domain\Exception\WorkflowAlreadyExistsException;
 use Semitexa\Workflow\Domain\Exception\WorkflowInstanceNotFoundException;
 use Semitexa\Workflow\Domain\Model\TransitionDefinition;
 use Semitexa\Workflow\Domain\Model\WorkflowInstance;
+use Semitexa\Workflow\Domain\Model\WorkflowSubjectRef;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionHistory;
 use Semitexa\Workflow\Domain\Model\WorkflowTransitionResult;
 use Semitexa\Workflow\Domain\Enum\TransitionResultEnum;
@@ -72,6 +73,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
             $command->workflowKey,
             $command->subject->workflowSubjectType(),
             $command->subject->workflowSubjectId(),
+            self::tenantOf($command->subject),
         );
         if ($existing !== null) {
             throw new WorkflowAlreadyExistsException(
@@ -85,7 +87,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $instance->setWorkflowKey($command->workflowKey);
         $instance->setSubjectType($command->subject->workflowSubjectType());
         $instance->setSubjectId($command->subject->workflowSubjectId());
-        $instance->setTenantId($command->subject->workflowTenantId());
+        $instance->setTenantId(self::tenantOf($command->subject));
         $instance->setCurrentState($definition->initialState());
         $instance->setStatus(WorkflowStatus::Active->value);
         $instance->setVersion(0);
@@ -98,21 +100,15 @@ final class WorkflowEngine implements WorkflowEngineInterface
             $this->instanceRepo->save($instance);
         } catch (ConstraintViolationException $e) {
             // Two starts for one subject can both pass the lookup above; the
-            // unique index (workflow_key, subject_type, subject_id) lets only
-            // one insert through. The loser gets the same typed answer as a
-            // start that found the instance, not a raw constraint error.
-            if ($this->instanceRepo->findBySubject(
-                $command->workflowKey,
-                $command->subject->workflowSubjectType(),
-                $command->subject->workflowSubjectId(),
-            ) !== null) {
-                throw new WorkflowAlreadyExistsException(
-                    $command->workflowKey,
-                    $command->subject->workflowSubjectType(),
-                    $command->subject->workflowSubjectId(),
-                );
+            // unique index (workflow_key, subject_type, subject_id, tenant_key)
+            // lets only one insert through. Until the old tenant-less index is
+            // dropped (orm:sync --allow-destructive), another tenant's subject
+            // id lands here too. Any other violation is not disguised.
+            $exists = $this->instanceRepo->findBySubject($command->workflowKey, $command->subject->workflowSubjectType(), $command->subject->workflowSubjectId(), self::tenantOf($command->subject)) !== null;
+            if (!$exists && preg_match('/uniq_workflow_instance_|UNIQUE constraint failed: workflow_instances\.workflow_key/', $e->getMessage()) !== 1) {
+                throw $e;
             }
-            throw $e;
+            throw new WorkflowAlreadyExistsException($command->workflowKey, $command->subject->workflowSubjectType(), $command->subject->workflowSubjectId());
         }
 
         $this->dispatchEvent(WorkflowStarted::class, [
@@ -136,6 +132,19 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $instance = $this->instanceRepo->findById($command->instanceId);
         if ($instance === null) {
             throw new WorkflowInstanceNotFoundException($command->instanceId);
+        }
+
+        // Another workflow's rules must never apply to this instance (a shared `approve` from `pending`).
+        if ($instance->getWorkflowKey() !== $command->workflowKey) {
+            $message = "Instance {$instance->getId()} belongs to workflow '{$instance->getWorkflowKey()}', not '{$command->workflowKey}'.";
+            return WorkflowTransitionResult::rejectedInvalid($instance->getId(), $command->transitionKey, $instance->getCurrentState(), 'workflow_mismatch', $message);
+        }
+
+        // Read here and saved with this version: the caller's own check, then a
+        // move between it and this read, applied the transition to a visit the
+        // caller never saw.
+        if ($command->expectedVersion !== null && $instance->getVersion() !== $command->expectedVersion) {
+            return WorkflowTransitionResult::rejectedConflict($instance->getId(), $command->transitionKey, $instance->getCurrentState());
         }
 
         // Reject if already in a terminal state
@@ -214,38 +223,54 @@ final class WorkflowEngine implements WorkflowEngineInterface
             );
         }
 
-        $scheduledFollowUp = false;
+        // After the caller's transaction commits, not inside it: the state
+        // now joins that transaction, and a mail sent, a timer set or an
+        // event heard for a transition the caller then rolled back stayed.
+        // Outside a transaction, now, as before.
+        $followUp = function () use ($instance, $transition, $command, $fromState): bool {
+            $scheduledFollowUp = false;
 
-        // Run side-effects post-commit (idempotent; failures are logged but do not rollback)
-        $sideEffectFailures = $this->runSideEffects($transition, $instance, $command);
-        if ($sideEffectFailures !== [] && isset($this->logger)) {
-            $this->logger->warning("Workflow '{$instance->getWorkflowKey()}' transition '{$command->transitionKey}' was applied, but side effects failed.", [
-                'instanceId' => $instance->getId(),
-                'tenantId'   => $instance->getTenantId(),
-                'failures'   => $sideEffectFailures,
-            ]);
+            // Run side-effects post-commit (idempotent; failures are logged but do not rollback)
+            $sideEffectFailures = $this->runSideEffects($transition, $instance, $command);
+            if ($sideEffectFailures !== [] && isset($this->logger)) {
+                $this->logger->warning("Workflow '{$instance->getWorkflowKey()}' transition '{$command->transitionKey}' was applied, but side effects failed.", [
+                    'instanceId' => $instance->getId(),
+                    'tenantId'   => $instance->getTenantId(),
+                    'failures'   => $sideEffectFailures,
+                ]);
+            }
+            // Run again later as the RetryPolicy says, or given up after the transition's events.
+            $givenUp = [];
+            foreach ($sideEffectFailures as $failure) {
+                if (($policy = $transition->retryPolicy) !== null && $policy->maxAttempts > 1
+                    && $this->followUps()->sideEffectRetry($instance, $transition, $failure['sideEffect'], 2, $policy->backoffForAttempt(1), $command->context)) {
+                    $scheduledFollowUp = true;
+                    continue;
+                }
+                $givenUp[] = $failure;
+                $this->failures()->log($instance, $command->transitionKey, $failure, 1);
+            }
+
+            // Schedule timeout job if transition has a timeout policy
+            if ($transition->timeout !== null && $this->followUps()->timeout($instance, $transition, $command->transitionKey)) {
+                $scheduledFollowUp = true;
+            }
+
+            // Emit post-commit domain events
+            $this->emitTransitionEvents($instance, $transition, $command, $fromState, $sideEffectFailures);
+            foreach ($givenUp as $failure) {
+                $this->failures()->dispatch($instance, $command->transitionKey, $failure);
+            }
+
+            return $scheduledFollowUp;
+        };
+        if (isset($this->transactionManager) && $this->transactionManager->isActive()) {
+            $this->transactionManager->afterCommit($followUp);
+            // Not run yet: what it will schedule, as far as can be known now.
+            $scheduledFollowUp = ($transition->timeout !== null && isset($this->scheduler)) || $transition->retryPolicy !== null;
+        } else {
+            $scheduledFollowUp = $followUp();
         }
-
-        // Schedule timeout job if transition has a timeout policy
-        if ($transition->timeout !== null && isset($this->scheduler)) {
-            $runAt = (new \DateTimeImmutable())->modify("+{$transition->timeout->afterSeconds} seconds");
-            $this->scheduler->dispatchAt(
-                jobClass: WorkflowTimeoutJob::class,
-                runAt: $runAt,
-                payload: [
-                    'workflowKey'   => $instance->getWorkflowKey(),
-                    'instanceId'    => $instance->getId(),
-                    'transitionKey' => $transition->timeout->transitionKey,
-                ],
-                pool: $transition->timeout->pool,
-                tenantId: $instance->getTenantId(),
-                lockKey: "workflow_timeout_{$instance->getId()}_{$transition->timeout->transitionKey}",
-            );
-            $scheduledFollowUp = true;
-        }
-
-        // Emit post-commit domain events
-        $this->emitTransitionEvents($instance, $transition, $command, $fromState, $sideEffectFailures);
 
         return WorkflowTransitionResult::applied(
             instanceId: $instance->getId(),
@@ -254,6 +279,61 @@ final class WorkflowEngine implements WorkflowEngineInterface
             toState: $instance->getCurrentState(),
             scheduledFollowUp: $scheduledFollowUp,
         );
+    }
+
+    public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = [], ?string $chain = null): void
+    {
+        $this->assertDependenciesAvailable();
+
+        $definition = $this->registry->get($workflowKey);
+        $instance = $this->instanceRepo->findById($instanceId);
+        if ($instance === null) {
+            $this->log('warning', "Workflow '{$workflowKey}' instance {$instanceId} no longer exists; the retry of {$sideEffectClass} is dropped.", [
+                'transitionKey' => $transitionKey,
+            ]);
+            return;
+        }
+        // The job's payload is read back from storage: only a side effect the
+        // transition declares is run.
+        $transition = null;
+        foreach ($definition->transitions() as $t) {
+            if ($t->key === $transitionKey && in_array($sideEffectClass, $t->sideEffects, true)) {
+                $transition = $t;
+                break;
+            }
+        }
+        if ($transition === null) {
+            $this->log('warning', "Workflow '{$workflowKey}' transition '{$transitionKey}' declares no side effect {$sideEffectClass}; the retry is dropped.", [
+                'instanceId' => $instanceId,
+            ]);
+            return;
+        }
+
+        $failure = isset($this->container)
+            ? $this->runSideEffect($sideEffectClass, WorkflowSubjectRef::of($instance), $instance, $transition, $context)
+            : ['sideEffect' => $sideEffectClass, 'code' => 'no_container', 'message' => 'The engine has no container to build this side effect with.'];
+        if ($failure === null) {
+            return;
+        }
+
+        $policy = $transition->retryPolicy;
+        if ($policy !== null && $attempt < $policy->maxAttempts
+            && $this->followUps()->sideEffectRetry($instance, $transition, $sideEffectClass, $attempt + 1, $policy->backoffForAttempt($attempt), $context, $chain)) {
+            return;
+        }
+
+        $this->failures()->log($instance, $transitionKey, $failure, $attempt);
+        $this->failures()->dispatch($instance, $transitionKey, $failure, $transition->toState);
+    }
+
+    private function followUps(): WorkflowFollowUpScheduler
+    {
+        return new WorkflowFollowUpScheduler($this->scheduler ?? null, $this->logger ?? null);
+    }
+
+    private function failures(): WorkflowFailureReporter
+    {
+        return new WorkflowFailureReporter($this->logger ?? null, $this->eventDispatcher ?? null);
     }
 
     public function get(string $instanceId): ?WorkflowInstance
@@ -271,6 +351,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
             $workflowKey,
             $subject->workflowSubjectType(),
             $subject->workflowSubjectId(),
+            self::tenantOf($subject),
         );
     }
 
@@ -304,7 +385,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
 
         // Build a minimal subject reference from the instance
-        $subjectRef = $this->buildSubjectRef($instance);
+        $subjectRef = WorkflowSubjectRef::of($instance);
 
         $failures = [];
         foreach ($transition->guards as $guardClass) {
@@ -350,6 +431,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         } elseif ($transition->timeout !== null) {
             $instance->setStatus(WorkflowStatus::Waiting->value);
             $instance->setWaitingUntil((new \DateTimeImmutable())->modify("+{$transition->timeout->afterSeconds} seconds"));
+            $instance->setAwaitingManualAction(false);
         } else {
             $instance->setStatus(WorkflowStatus::Active->value);
             $instance->setWaitingUntil(null);
@@ -365,13 +447,17 @@ final class WorkflowEngine implements WorkflowEngineInterface
         TransitionDefinition $transition,
         array $guardFailures,
     ): bool {
-        $committed = $this->instanceRepo->saveWithVersionCheck($instance, $expectedVersion);
+        // One transaction: a failed history insert left the state moved with nothing after it.
+        $commit = function () use ($instance, $expectedVersion, $fromState, $command, $transition, $guardFailures): bool {
+            $committed = $this->instanceRepo->saveWithVersionCheck($instance, $expectedVersion);
+            if ($committed) {
+                $this->recordHistory($instance, $fromState, $command, $transition, TransitionResultEnum::Applied, $guardFailures);
+            }
 
-        if ($committed) {
-            $this->recordHistory($instance, $fromState, $command, $transition, TransitionResultEnum::Applied, $guardFailures);
-        }
+            return $committed;
+        };
 
-        return $committed;
+        return isset($this->transactionManager) ? (bool) $this->transactionManager->run($commit) : $commit();
     }
 
     private function recordHistory(
@@ -400,6 +486,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $this->historyRepo->save($history);
     }
 
+    /** @return list<array{sideEffect: string, code: string, message: string}> */
     private function runSideEffects(
         TransitionDefinition $transition,
         WorkflowInstance $instance,
@@ -418,31 +505,49 @@ final class WorkflowEngine implements WorkflowEngineInterface
             ], $transition->sideEffects);
         }
 
-        $subjectRef = $this->buildSubjectRef($instance);
+        $subjectRef = WorkflowSubjectRef::of($instance);
         $failures = [];
 
         foreach ($transition->sideEffects as $sideEffectClass) {
-            try {
-                /** @var WorkflowSideEffectInterface $sideEffect */
-                $sideEffect = $this->container->get($sideEffectClass);
-                $result = $sideEffect->execute($subjectRef, $instance, $transition, $command->context);
-                if (!$result->succeeded) {
-                    $failures[] = [
-                        'sideEffect' => $sideEffectClass,
-                        'code'       => $result->failureCode ?? 'failed',
-                        'message'    => $result->failureMessage ?? '',
-                    ];
-                }
-            } catch (\Throwable $e) {
-                $failures[] = [
-                    'sideEffect' => $sideEffectClass,
-                    'code'       => 'exception',
-                    'message'    => $e->getMessage(),
-                ];
+            $failure = $this->runSideEffect($sideEffectClass, $subjectRef, $instance, $transition, $command->context);
+            if ($failure !== null) {
+                $failures[] = $failure;
             }
         }
 
         return $failures;
+    }
+
+    /**
+     * @param array<mixed> $context
+     * @return array{sideEffect: string, code: string, message: string}|null null when it succeeded
+     */
+    private function runSideEffect(
+        string $sideEffectClass,
+        WorkflowSubjectReferenceInterface $subjectRef,
+        WorkflowInstance $instance,
+        TransitionDefinition $transition,
+        array $context,
+    ): ?array {
+        try {
+            /** @var WorkflowSideEffectInterface $sideEffect */
+            $sideEffect = $this->container->get($sideEffectClass);
+            $result = $sideEffect->execute($subjectRef, $instance, $transition, $context);
+            if ($result->succeeded) {
+                return null;
+            }
+            return [
+                'sideEffect' => $sideEffectClass,
+                'code'       => $result->failureCode ?? 'failed',
+                'message'    => $result->failureMessage ?? '',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'sideEffect' => $sideEffectClass,
+                'code'       => 'exception',
+                'message'    => $e->getMessage(),
+            ];
+        }
     }
 
     private function emitTransitionEvents(
@@ -494,27 +599,50 @@ final class WorkflowEngine implements WorkflowEngineInterface
         }
     }
 
+    /**
+     * @param 'warning'|'error' $level
+     * @param array<string, mixed> $context
+     */
+    private function log(string $level, string $message, array $context): void
+    {
+        if (isset($this->logger)) {
+            $this->logger->{$level}($message, $context);
+        }
+    }
+
     private function dispatchEvent(string $eventClass, array $data): void
     {
         if (!isset($this->eventDispatcher)) {
             return;
         }
-        $event = $this->eventDispatcher->create($eventClass, $data);
-        $this->eventDispatcher->dispatch($event);
+        $dispatch = function () use ($eventClass, $data): void {
+            // A listener that throws is its own failure: it ended apply()
+            // after the commit, and the WorkflowFailed owed after it was
+            // never sent.
+            try {
+                $this->eventDispatcher->dispatch($this->eventDispatcher->create($eventClass, $data));
+            } catch (\Throwable $e) {
+                $this->log('error', "A listener of {$eventClass} failed: {$e->getMessage()}", [
+                    'instanceId' => $data['instanceId'] ?? null,
+                    'workflowKey' => $data['workflowKey'] ?? null,
+                ]);
+            }
+        };
+        // Heard once the caller's transaction commits: a rolled-back start or
+        // transition is not announced.
+        if (isset($this->transactionManager) && $this->transactionManager->isActive()) {
+            $this->transactionManager->afterCommit($dispatch);
+
+            return;
+        }
+        $dispatch();
     }
 
-    private function buildSubjectRef(WorkflowInstance $instance): WorkflowSubjectReferenceInterface
+    /** '' is no tenant, as null is: otherwise a start with '' missed an instance started with null. */
+    private static function tenantOf(WorkflowSubjectReferenceInterface $subject): ?string
     {
-        return new class ($instance->getSubjectType(), $instance->getSubjectId(), $instance->getTenantId()) implements WorkflowSubjectReferenceInterface {
-            public function __construct(
-                private readonly string $type,
-                private readonly string $id,
-                private readonly ?string $tenant,
-            ) {}
+        $tenant = $subject->workflowTenantId();
 
-            public function workflowSubjectType(): string { return $this->type; }
-            public function workflowSubjectId(): string { return $this->id; }
-            public function workflowTenantId(): ?string { return $this->tenant; }
-        };
+        return $tenant === '' ? null : $tenant;
     }
 }

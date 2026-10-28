@@ -19,7 +19,7 @@ Depends on Core, ORM, Tenancy, and Scheduler. Used by application modules that n
 - `#[AsWorkflowDefinition]` attribute for workflow registration
 - Code-defined state machines with typed transitions
 - Transition guards for conditional progression
-- Side-effects and callbacks on state changes
+- Side-effects and callbacks on state changes; a `RetryPolicy` on a transition runs a failed side effect again through the Scheduler, with exponential backoff, up to `maxAttempts` attempts in all, then logs an error
 - Full transition history via ORM
 - Scheduler integration for delayed/async transitions
 - Event payloads: `WorkflowCompleted`, `WorkflowFailed`, `WorkflowTransitionApplied`, `WorkflowTransitionRejected`

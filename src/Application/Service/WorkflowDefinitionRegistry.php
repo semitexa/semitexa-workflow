@@ -100,6 +100,13 @@ final class WorkflowDefinitionRegistry
 
             $definition ??= new $className();
             $key = $className::key();
+            // Two definitions under one key: the one discovered last won, so
+            // which rules applied depended on discovery order.
+            if (isset($this->definitions[$key])) {
+                $first = $this->definitions[$key]::class;
+                $this->definitions = [];
+                throw new \LogicException(sprintf('Workflow key "%s" is declared by both %s and %s.', $key, $first, $className));
+            }
             $this->definitions[$key] = $definition;
         }
 

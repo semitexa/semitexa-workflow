@@ -74,15 +74,26 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
 
     private function adapter(): \Semitexa\Orm\Adapter\DatabaseAdapterInterface
     {
-        return $this->orm()->getAdapter();
+        // The connection of the transaction in progress, when there is one:
+        // getAdapter() takes its own pooled connection and autocommits, so the
+        // state write escaped the engine's transaction.
+        return $this->orm()->getQueryAdapter();
     }
 
+    /**
+     * The persisted state — the id the insert made, above all — back into the
+     * caller's instance. Through reflection: the model's properties are
+     * private, and get_object_vars() from here saw none of them, so save()
+     * copied nothing: a saved history entry kept an empty id.
+     */
     private function copyIntoMutableDomain(object $source, WorkflowTransitionHistory $target): void
     {
         $source instanceof WorkflowTransitionHistory || throw new \InvalidArgumentException('Unexpected persisted domain model.');
 
-        foreach (get_object_vars($source) as $property => $value) {
-            $target->{$property} = $value;
+        foreach ((new \ReflectionObject($source))->getProperties() as $property) {
+            if (!$property->isStatic() && $property->isInitialized($source)) {
+                $property->setValue($target, $property->getValue($source));
+            }
         }
     }
 }

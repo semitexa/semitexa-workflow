@@ -15,7 +15,10 @@ final readonly class RetryPolicy
 
     public function backoffForAttempt(int $attempt): int
     {
-        $seconds = (int) ($this->backoffSeconds * ($this->backoffMultiplier ** ($attempt - 1)));
-        return min($seconds, $this->maxBackoffSeconds);
+        // Clamped as a float: past ~58 attempts the product overflowed the int
+        // cast, came out 0, and the retries ran with no wait at all.
+        $seconds = $this->backoffSeconds * ($this->backoffMultiplier ** max(0, $attempt - 1));
+
+        return (int) max(0, min($seconds, $this->maxBackoffSeconds));
     }
 }
