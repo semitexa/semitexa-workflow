@@ -1,6 +1,6 @@
 {
     "name": "semitexa/workflow",
-    "description": "Semitexa Workflow — stateful business process orchestration with code-defined state machines, transition guards, side-effects, history, and scheduler integration",
+    "description": "Semitexa Workflow \u2014 stateful business process orchestration with code-defined state machines, transition guards, side-effects, history, and scheduler integration",
     "type": "semitexa-module",
     "license": "MIT",
     "authors": [
@@ -11,10 +11,10 @@
     ],
     "require": {
         "php": "^8.4",
-        "semitexa/core": "*",
-        "semitexa/orm": "*",
+        "semitexa/core": ">=2026.10.29.1052 || dev-master",
+        "semitexa/orm": ">=2026.10.29.1052 || dev-master",
         "semitexa/tenancy": "*",
-        "semitexa/scheduler": "*"
+        "semitexa/scheduler": ">=2026.10.29.1052 || dev-master"
     },
     "autoload": {
         "psr-4": {
@@ -28,9 +28,9 @@
         },
         "semitexa": {
             "floors": {
-                "semitexa/core": "next",
-                "semitexa/scheduler": "next",
-                "semitexa/orm": "next"
+                "semitexa/core": "2026.10.29.1052",
+                "semitexa/scheduler": "2026.10.29.1052",
+                "semitexa/orm": "2026.10.29.1052"
             }
         }
     },
