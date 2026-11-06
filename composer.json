@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": "^8.4",
-        "semitexa/core": ">=2026.10.29.1052 || dev-master",
+        "semitexa/core": ">=2026.11.04.1744 || dev-master",
         "semitexa/orm": ">=2026.10.29.1052 || dev-master",
         "semitexa/tenancy": "*",
         "semitexa/scheduler": ">=2026.10.29.1052 || dev-master"
@@ -28,7 +28,7 @@
         },
         "semitexa": {
             "floors": {
-                "semitexa/core": "next",
+                "semitexa/core": "2026.11.04.1744",
                 "semitexa/scheduler": "2026.10.29.1052",
                 "semitexa/orm": "2026.10.29.1052"
             }
