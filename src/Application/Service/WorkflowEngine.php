@@ -291,7 +291,8 @@ final class WorkflowEngine implements WorkflowEngineInterface
         $this->assertDependenciesAvailable();
 
         $definition = $this->registry->get($workflowKey);
-        $instance = $this->instanceRepo->findById($instanceId);
+        // Another tenant's instance is dropped like a deleted one.
+        $instance = $this->findForCurrentTenant($instanceId);
         if ($instance === null) {
             $this->log('warning', "Workflow '{$workflowKey}' instance {$instanceId} no longer exists; the retry of {$sideEffectClass} is dropped.", [
                 'transitionKey' => $transitionKey,

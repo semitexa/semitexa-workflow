@@ -39,6 +39,7 @@ interface WorkflowEngineInterface
      * logs an error. A class the transition does not declare is not run.
      * The side effect sees the instance as it is now, and the context as it
      * was stored: JSON, so a date or an enum comes back as an array or a value.
+     * Another tenant's instance is dropped like one that no longer exists.
      *
      * @param array<string, mixed> $context the command context the transition ran with
      */

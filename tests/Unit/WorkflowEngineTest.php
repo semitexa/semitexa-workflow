@@ -681,6 +681,23 @@ final class WorkflowEngineTest extends TestCase
         self::assertSame([], $this->history->rows(), "the refused transition left history on another tenant's instance");
     }
 
+    /** The retry read the instance by its id alone, like get(): the side effect ran on another tenant's instance. */
+    #[Test]
+    public function another_tenant_cannot_rerun_a_side_effect_on_an_instance(): void
+    {
+        $order = $this->engine()->start($this->startOrder());
+
+        $this->engine(tenant: 't-2')->retrySideEffect('order', $order->getId(), 'pay_retried', EngineReceiptSideEffect::class, 2);
+
+        self::assertSame(0, EngineFixtures::$sideEffectRuns, "tenant t-2 ran a side effect on tenant t-1's instance");
+        self::assertSame([], $this->scheduler->jobs, 'the refused retry scheduled another');
+        self::assertSame([WorkflowStarted::class], $this->events->classes(), 'the refused retry dispatched an event');
+        self::assertSame([], $this->history->rows());
+
+        $this->engine(tenant: 't-1')->retrySideEffect('order', $order->getId(), 'pay_retried', EngineReceiptSideEffect::class, 2);
+        self::assertSame(1, EngineFixtures::$sideEffectRuns, 'tenant t-1 lost the retry on its own instance');
+    }
+
     #[Test]
     public function a_tenant_reads_and_moves_its_own_instance(): void
     {
