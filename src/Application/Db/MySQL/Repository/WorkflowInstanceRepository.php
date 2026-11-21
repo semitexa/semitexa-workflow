@@ -25,6 +25,11 @@ final class WorkflowInstanceRepository implements WorkflowInstanceRepositoryInte
 
     private ?DomainRepository $system = null;
 
+    /**
+     * Reads every tenant's rows: the id alone decides. The engine applies the
+     * tenant check ({@see \Semitexa\Workflow\Domain\Contract\WorkflowEngineInterface::get()});
+     * a caller outside the engine must scope the result itself.
+     */
     public function findById(string $id): ?WorkflowInstance
     {
         /** @var WorkflowInstance|null */

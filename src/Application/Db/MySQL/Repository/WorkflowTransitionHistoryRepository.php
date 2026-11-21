@@ -39,6 +39,12 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
         $this->copyIntoMutableDomain($persisted, $entity);
     }
 
+    /**
+     * Reads the history of any tenant's instance: the instance id alone
+     * decides. The engine reaches it only after its own tenant check; a
+     * caller outside the engine must first check the instance is the current
+     * tenant's ({@see \Semitexa\Workflow\Domain\Contract\WorkflowEngineInterface::get()}).
+     */
     public function findByInstanceId(string $instanceId, int $limit = 100): array
     {
         /** @var list<WorkflowTransitionHistory> */
@@ -49,6 +55,12 @@ final class WorkflowTransitionHistoryRepository implements WorkflowTransitionHis
             ->fetchAllAs(WorkflowTransitionHistory::class, $this->orm()->getMapperRegistry());
     }
 
+    /**
+     * Reads the history of any tenant's instance: the instance id alone
+     * decides. The engine reaches it only after its own tenant check; a
+     * caller outside the engine must first check the instance is the current
+     * tenant's ({@see \Semitexa\Workflow\Domain\Contract\WorkflowEngineInterface::get()}).
+     */
     public function countAttempts(string $instanceId, string $transitionKey): int
     {
         $result = $this->adapter()->execute(
