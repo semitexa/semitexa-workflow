@@ -25,6 +25,7 @@ interface WorkflowEngineInterface
      * Returns a result indicating whether the transition was applied or rejected.
      * Does not throw on guard failures or invalid transitions — those are represented
      * as rejected results with structured failure information.
+     * Another tenant's instance is not found, as in {@see get()}.
      *
      * @throws \Semitexa\Workflow\Domain\Exception\WorkflowDefinitionNotFoundException
      * @throws \Semitexa\Workflow\Domain\Exception\WorkflowInstanceNotFoundException
@@ -44,7 +45,9 @@ interface WorkflowEngineInterface
     public function retrySideEffect(string $workflowKey, string $instanceId, string $transitionKey, string $sideEffectClass, int $attempt, array $context = [], ?string $chain = null): void;
 
     /**
-     * Load a workflow instance by ID.
+     * Load a workflow instance by ID. Under a current tenant, another
+     * tenant's instance is answered as null; with no current tenant, and for
+     * an instance that has no tenant, the id alone decides.
      */
     public function get(string $instanceId): ?WorkflowInstance;
 

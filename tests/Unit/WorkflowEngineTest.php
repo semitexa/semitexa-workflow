@@ -10,6 +10,9 @@ use Psr\Container\ContainerInterface;
 use Semitexa\Core\Event\EventDispatcherInterface;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowFailed;
 use Semitexa\Core\Log\LoggerInterface;
+use Semitexa\Core\Tenant\TenantContextInterface;
+use Semitexa\Core\Tenant\TenantContextStoreInterface;
+use Semitexa\Tenancy\Context\TenantContext;
 use Semitexa\Scheduler\Domain\Contract\SchedulerInterface;
 use Semitexa\Scheduler\Domain\Model\ScheduledJobContext;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowCompleted;
@@ -32,6 +35,7 @@ use Semitexa\Workflow\Domain\Contract\WorkflowSubjectReferenceInterface;
 use Semitexa\Workflow\Domain\Contract\WorkflowTransitionHistoryRepositoryInterface;
 use Semitexa\Workflow\Domain\Enum\TransitionResultEnum;
 use Semitexa\Workflow\Domain\Enum\TriggerType;
+use Semitexa\Workflow\Domain\Exception\WorkflowInstanceNotFoundException;
 use Semitexa\Workflow\Domain\Model\GuardResult;
 use Semitexa\Workflow\Domain\Model\RetryPolicy;
 use Semitexa\Workflow\Domain\Model\SideEffectResult;
@@ -652,6 +656,67 @@ final class WorkflowEngineTest extends TestCase
         self::assertNull($engine->findBySubject('order', $sameIdOtherTenant), "tenant t-2 read tenant t-1's workflow");
     }
 
+    /**
+     * get() and apply() took an instance id and no tenant, and the store
+     * reads in the system scope: a request of tenant t-2 that named tenant
+     * t-1's instance id read it and moved it.
+     */
+    #[Test]
+    public function another_tenant_can_neither_read_nor_move_an_instance_by_its_id(): void
+    {
+        $order = $this->engine()->start($this->startOrder());
+        $other = $this->engine(tenant: 't-2');
+
+        $read = $other->get($order->getId());
+        $moved = null;
+        try {
+            $moved = $other->apply($this->command($order, 'pay'));
+        } catch (WorkflowInstanceNotFoundException) {
+        }
+
+        self::assertNull($read, "tenant t-2 read tenant t-1's workflow instance by its id");
+        self::assertNull($moved, "tenant t-2's transition on tenant t-1's instance was answered, not refused as an unknown instance");
+        $stored = $this->instances->findById($order->getId());
+        self::assertSame(['new', 0], [$stored?->getCurrentState(), $stored?->getVersion()], "tenant t-2 moved tenant t-1's workflow instance");
+        self::assertSame([], $this->history->rows(), "the refused transition left history on another tenant's instance");
+    }
+
+    #[Test]
+    public function a_tenant_reads_and_moves_its_own_instance(): void
+    {
+        $order = $this->engine()->start($this->startOrder());
+        $own = $this->engine(tenant: 't-1');
+
+        self::assertSame($order->getId(), $own->get($order->getId())?->getId(), 'tenant t-1 lost its own workflow');
+        self::assertSame(TransitionResultEnum::Applied, $own->apply($this->command($order, 'pay'))->result);
+        self::assertSame('paid', $this->instances->findById($order->getId())?->getCurrentState());
+    }
+
+    /**
+     * An app without tenants, and the system side of one with them (a console
+     * command, a global scheduler run): the id alone decides, as before. An
+     * instance without a tenant is nobody else's, so a tenant reaches it too,
+     * as the subject lookup's null tenant does.
+     */
+    #[Test]
+    public function without_a_current_tenant_or_an_instance_tenant_the_id_alone_decides(): void
+    {
+        $plain = $this->engine()->start(new StartWorkflowCommand('order', new class implements WorkflowSubjectReferenceInterface {
+            public function workflowSubjectType(): string { return 'order'; }
+            public function workflowSubjectId(): string { return 'order-plain'; }
+            public function workflowTenantId(): ?string { return null; }
+        }));
+        $owned = $this->engine()->start($this->startOrder());
+
+        foreach ([$this->engine(), $this->engine(tenant: null), $this->engine(tenant: 'default')] as $noTenant) {
+            self::assertSame($plain->getId(), $noTenant->get($plain->getId())?->getId());
+            self::assertSame($owned->getId(), $noTenant->get($owned->getId())?->getId());
+        }
+        self::assertSame(TransitionResultEnum::Applied, $this->engine(tenant: null)->apply($this->command($owned, 'pay'))->result);
+        self::assertSame($plain->getId(), $this->engine(tenant: 't-2')->get($plain->getId())?->getId());
+        self::assertSame(TransitionResultEnum::Applied, $this->engine(tenant: 't-2')->apply($this->command($plain, 'pay'))->result);
+    }
+
     /** @param array<string, mixed> $payload */
     private function runRetryJob(WorkflowEngine $engine, array $payload): void
     {
@@ -668,7 +733,8 @@ final class WorkflowEngineTest extends TestCase
         $job->handle(new ScheduledJobContext(runId: 'run-1', jobClass: WorkflowTimeoutJob::class, pool: 'default', payload: $payload));
     }
 
-    private function engine(bool $container = true): WorkflowEngine
+    /** @param string|false|null $tenant false: no tenant store at all; null: a store with nothing resolved */
+    private function engine(bool $container = true, string|false|null $tenant = false): WorkflowEngine
     {
         $registry = (new \ReflectionClass(WorkflowDefinitionRegistry::class))->newInstanceWithoutConstructor();
         (new \ReflectionProperty($registry, 'definitions'))->setValue($registry, ['order' => new EngineOrderWorkflow(), 'quote' => new EngineQuoteWorkflow()]);
@@ -685,6 +751,15 @@ final class WorkflowEngineTest extends TestCase
         ];
         if ($container) {
             $properties['container'] = new EngineContainer();
+        }
+        if ($tenant !== false) {
+            $properties['tenants'] = new class($tenant === null ? null : TenantContext::fromResolution($tenant, 'test')) implements TenantContextStoreInterface {
+                public function __construct(private ?TenantContextInterface $context) {}
+                public function get(): TenantContextInterface { return $this->context ?? TenantContext::default(); }
+                public function tryGet(): ?TenantContextInterface { return $this->context; }
+                public function set(TenantContextInterface $context): void { $this->context = $context; }
+                public function clear(): void { $this->context = null; }
+            };
         }
         foreach ($properties as $name => $value) {
             (new \ReflectionProperty(WorkflowEngine::class, $name))->setValue($engine, $value);

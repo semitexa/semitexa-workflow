@@ -9,6 +9,8 @@ use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Event\EventDispatcherInterface;
 use Semitexa\Core\Log\LoggerInterface;
+use Semitexa\Core\Tenant\TenantContextAccess;
+use Semitexa\Core\Tenant\TenantContextStoreInterface;
 use Semitexa\Orm\Application\Service\Transaction\TransactionManager;
 use Semitexa\Orm\Exception\ConstraintViolationException;
 use Semitexa\Workflow\Application\Payload\Event\WorkflowCompleted;
@@ -62,6 +64,9 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
     #[InjectAsReadonly]
     protected LoggerInterface $logger;
+
+    #[InjectAsReadonly]
+    protected TenantContextStoreInterface $tenants;
 
     public function start(StartWorkflowCommand $command): WorkflowInstance
     {
@@ -129,7 +134,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
 
         $definition = $this->registry->get($command->workflowKey);
 
-        $instance = $this->instanceRepo->findById($command->instanceId);
+        $instance = $this->findForCurrentTenant($command->instanceId);
         if ($instance === null) {
             throw new WorkflowInstanceNotFoundException($command->instanceId);
         }
@@ -340,7 +345,7 @@ final class WorkflowEngine implements WorkflowEngineInterface
     {
         $this->assertDependenciesAvailable();
 
-        return $this->instanceRepo->findById($instanceId);
+        return $this->findForCurrentTenant($instanceId);
     }
 
     public function findBySubject(string $workflowKey, WorkflowSubjectReferenceInterface $subject): ?WorkflowInstance
@@ -358,6 +363,25 @@ final class WorkflowEngine implements WorkflowEngineInterface
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * The store reads in the system scope, so an id alone reached any tenant's
+     * instance: a request of tenant B read and moved tenant A's. Another
+     * tenant's instance is answered as one that does not exist. With no
+     * current tenant (an app without tenants, a console command, a global
+     * scheduler run) and for an instance that has no tenant, as before.
+     */
+    private function findForCurrentTenant(string $instanceId): ?WorkflowInstance
+    {
+        $instance = $this->instanceRepo->findById($instanceId);
+        $owner = $instance?->getTenantId();
+        if ($instance === null || $owner === null || $owner === '') {
+            return $instance;
+        }
+        $current = isset($this->tenants) ? TenantContextAccess::tenantId($this->tenants->tryGet()) : null;
+
+        return $current === null || $current === $owner ? $instance : null;
+    }
 
     private function assertDependenciesAvailable(): void
     {
