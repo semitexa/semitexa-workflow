@@ -56,7 +56,8 @@ use Semitexa\Core\Attribute\Capability;
         $result = $this->workflows->apply(new ApplyTransitionCommand('order', $instance->getId(), 'ship'));
         // Silent: a refusal is not thrown. Unless $result->isApplied(), this call moved nothing: read $result->failureCode.
         // After a conflict another call may have moved it: read the instance again before deciding.
-        // get() and apply() see every tenant's instances: take the id from findBySubject(), never from a request.
+        // Under a current tenant get() and apply() answer another tenant's instance as not found (null, WorkflowInstanceNotFoundException).
+        // The subject's tenant must be that resolved tenant: started with null under a tenant, an instance is reachable by every tenant.
         USAGE,
 )]
 final class Capabilities

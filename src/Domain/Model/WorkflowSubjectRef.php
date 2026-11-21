@@ -6,7 +6,14 @@ namespace Semitexa\Workflow\Domain\Model;
 
 use Semitexa\Workflow\Domain\Contract\WorkflowSubjectReferenceInterface;
 
-/** The subject an instance was started for, as guards and side effects receive it. */
+/**
+ * The subject an instance was started for, as guards and side effects receive it.
+ *
+ * $tenant is the request's resolved tenant, never a value the request sent;
+ * null only in an app without tenants: an instance started with null under a
+ * tenant is reachable by its id from every tenant
+ * ({@see WorkflowSubjectReferenceInterface::workflowTenantId()}).
+ */
 final readonly class WorkflowSubjectRef implements WorkflowSubjectReferenceInterface
 {
     public function __construct(

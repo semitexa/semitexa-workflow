@@ -17,5 +17,12 @@ interface WorkflowSubjectReferenceInterface
 
     public function workflowSubjectId(): string;
 
+    /**
+     * The tenant the instance belongs to: the request's resolved tenant,
+     * never a value the request sent. The engine stores what this returns
+     * and does not compare it with the current tenant. Null (or '') means no
+     * tenant, for an app without tenants: an instance started so under a
+     * tenant is reachable by its id from every tenant.
+     */
     public function workflowTenantId(): ?string;
 }
